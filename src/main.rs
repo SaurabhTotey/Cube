@@ -11,6 +11,7 @@ use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExc
 use vulkano::image::ImageUsage;
 use vulkano::format::Format;
 use std::cmp::min;
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 
 fn main() {
 	let instance = Instance::new(
@@ -42,7 +43,7 @@ fn main() {
 	let (imageFormat, colorSpace) = surfaceCapabilities.supported_formats.iter()
 		.find(|formatAndColorSpace| formatAndColorSpace.0 == Format::B8G8R8A8Srgb && formatAndColorSpace.1 == ColorSpace::SrgbNonLinear)
 		.unwrap_or(surfaceCapabilities.supported_formats.iter().next().unwrap());
-	let (mut swapchain, images) = {
+	let (mut swapchain, swapchainImages) = {
 		let supportedAlpha = surfaceCapabilities.supported_composite_alpha.iter()
 			.find(|&compositeAlpha| compositeAlpha == CompositeAlpha::Opaque)
 			.unwrap_or(surfaceCapabilities.supported_composite_alpha.iter().next().unwrap());
@@ -67,5 +68,27 @@ fn main() {
 		).unwrap()
 	};
 
+	#[derive(Default, Copy, Clone)]
+	struct Vertex {
+		position: [f32; 3],
+		color: [f32; 4]
+	}
+	vulkano::impl_vertex!(Vertex, position, color);
 
+	let vertices = [
+		Vertex { position: [ 0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
+		Vertex { position: [-0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [0.0, 1.0, 0.0, 1.0] },
+		Vertex { position: [ 0.0, -1f32 / 3f32.sqrt()       , 0.0], color: [1.0, 0.0, 1.0, 1.0] }
+	].to_vec();
+	let vertexBuffer = CpuAccessibleBuffer::from_iter(
+		logicalDevice.clone(),
+		BufferUsage { vertex_buffer: true, ..BufferUsage::none() },
+		false,
+		vertices.iter().cloned()
+	).unwrap();
+
+	mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
+	mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
+	let vertexShader = VertexShader::Shader::load(logicalDevice.clone()).unwrap();
+	let fragmentShader = FragmentShader::Shader::load(logicalDevice.clone()).unwrap();
 }
