@@ -4,7 +4,6 @@ use vulkano::instance::{Instance, ApplicationInfo, PhysicalDevice};
 use std::borrow::Cow;
 use winit::event_loop::EventLoop;
 use winit::window::WindowBuilder;
-use winit::dpi::PhysicalSize;
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions};
 use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha};
@@ -12,6 +11,10 @@ use vulkano::image::ImageUsage;
 use vulkano::format::Format;
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
+use std::sync::Arc;
+use vulkano::pipeline::GraphicsPipeline;
+use vulkano::framebuffer::Subpass;
+use vulkano::command_buffer::DynamicState;
 
 fn main() {
 	let instance = Instance::new(
@@ -91,4 +94,34 @@ fn main() {
 	mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
 	let vertexShader = VertexShader::Shader::load(logicalDevice.clone()).unwrap();
 	let fragmentShader = FragmentShader::Shader::load(logicalDevice.clone()).unwrap();
+
+	let renderPass = Arc::new(
+		vulkano::single_pass_renderpass!(
+			logicalDevice.clone(),
+		    attachments: {
+		        color: {
+		            load: Clear,
+		            store: Store,
+		            format: swapchain.format(),
+		            samples: 1,
+		        }
+		    },
+		    pass: {
+		        color: [color],
+		        depth_stencil: {}
+		    }
+		).unwrap()
+	);
+
+	let pipeline = Arc::new(
+		GraphicsPipeline::start()
+			.vertex_input_single_buffer::<Vertex>()
+			.vertex_shader(vertexShader.main_entry_point(), ())
+			.viewports_dynamic_scissors_irrelevant(1)
+			.fragment_shader(fragmentShader.main_entry_point(), ())
+			.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
+			.build(logicalDevice.clone()).unwrap()
+	);
+
+	let mut dynamicState = DynamicState::none();
 }
