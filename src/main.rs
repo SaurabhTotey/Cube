@@ -92,6 +92,13 @@ fn main() {
 		false,
 		vertices.iter().cloned()
 	).unwrap();
+	let indices = [0u32, 1, 2];
+	let indexBuffer = CpuAccessibleBuffer::from_iter(
+		logicalDevice.clone(),
+		BufferUsage { index_buffer: true, ..BufferUsage::none() },
+		false,
+		indices.iter().cloned()
+	).unwrap();
 
 	mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 	mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
@@ -170,7 +177,7 @@ fn main() {
 				let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(logicalDevice.clone(), deviceQueue.family()).unwrap();
 				builder
 					.begin_render_pass(swapchainFrameBuffers[numberOfImages].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
-					.draw(pipeline.clone(), &dynamicState, vertexBuffer.clone(), (), ()).unwrap()
+					.draw_indexed(pipeline.clone(), &dynamicState, vertexBuffer.clone(), indexBuffer.clone(), (), ()).unwrap()
 					.end_render_pass().unwrap();
 				let commandBuffer = builder.build().unwrap();
 
