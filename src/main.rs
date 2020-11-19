@@ -163,7 +163,7 @@ fn main() {
 					swapchain = newSwapchain;
 					swapchainFrameBuffers = frameBuffersForWindowSize(&newImages, renderPass.clone(), &mut dynamicState);
 				}
-				let (numberOfImages, isSuboptimal, acquireFuture) = match acquire_next_image(swapchain.clone(), None) {
+				let (frameBufferIndex, isSuboptimal, acquireFuture) = match acquire_next_image(swapchain.clone(), None) {
 					Ok(r) => r,
 					Err(_) => {
 						shouldRecreateSwapchain = true;
@@ -177,7 +177,7 @@ fn main() {
 
 				let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(logicalDevice.clone(), deviceQueue.family()).unwrap();
 				builder
-					.begin_render_pass(swapchainFrameBuffers[numberOfImages].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
+					.begin_render_pass(swapchainFrameBuffers[frameBufferIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
 					.draw_indexed(pipeline.clone(), &dynamicState, vertexBuffer.clone(), indexBuffer.clone(), (), ()).unwrap()
 					.end_render_pass().unwrap();
 				let commandBuffer = builder.build().unwrap();
@@ -186,7 +186,7 @@ fn main() {
 					.take().unwrap()
 					.join(acquireFuture)
 					.then_execute(deviceQueue.clone(), commandBuffer).unwrap()
-					.then_swapchain_present(deviceQueue.clone(), swapchain.clone(), numberOfImages)
+					.then_swapchain_present(deviceQueue.clone(), swapchain.clone(), frameBufferIndex)
 					.then_signal_fence_and_flush();
 				previousFrameEnding = match future {
 					Ok(f) => Some(f.boxed()),
