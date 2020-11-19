@@ -8,13 +8,13 @@ use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions};
 use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha};
 use vulkano::image::ImageUsage;
-use vulkano::format::Format;
+use vulkano::format::{Format, ClearValue};
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use std::sync::Arc;
 use vulkano::pipeline::GraphicsPipeline;
-use vulkano::framebuffer::Subpass;
-use vulkano::command_buffer::DynamicState;
+use vulkano::framebuffer::{Subpass, Framebuffer};
+use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
 
 fn main() {
 	let instance = Instance::new(
@@ -124,4 +124,17 @@ fn main() {
 	);
 
 	let mut dynamicState = DynamicState::none();
+
+	let mut swapchainFramebuffers = swapchainImages.iter().map(|swapchainImage| {
+		Arc::new(Framebuffer::start(renderPass.clone()).add(swapchainImage.clone()).unwrap().build().unwrap())
+	});
+
+	let commandBuffers = swapchainFramebuffers.map(|framebuffer| {
+		let mut builder = AutoCommandBufferBuilder::primary(logicalDevice.clone(), queueFamily.clone()).unwrap();
+		builder
+			.begin_render_pass(framebuffer.clone(), false, vec![ClearValue::from([0.0, 0.0, 0.0, 1.0])]).unwrap()
+			.draw(pipeline.clone(), &dynamicState, vertexBuffer.clone(), (), ()).unwrap()
+			.end_render_pass().unwrap();
+		builder
+	}).map(|builder| builder.build().unwrap());
 }
