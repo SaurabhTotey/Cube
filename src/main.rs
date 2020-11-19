@@ -2,19 +2,22 @@
 
 use vulkano::instance::{Instance, ApplicationInfo, PhysicalDevice};
 use std::borrow::Cow;
-use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::event_loop::{EventLoop, ControlFlow};
+use winit::window::{WindowBuilder, Window};
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions};
-use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha};
-use vulkano::image::ImageUsage;
-use vulkano::format::{Format, ClearValue};
+use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, acquire_next_image};
+use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::format::Format;
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use std::sync::Arc;
 use vulkano::pipeline::GraphicsPipeline;
-use vulkano::framebuffer::{Subpass, Framebuffer};
+use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, FramebufferAbstract};
 use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
+use winit::event::{Event, WindowEvent};
+use vulkano::pipeline::viewport::Viewport;
+use vulkano::sync::{now, GpuFuture};
 
 fn main() {
 	let instance = Instance::new(
@@ -81,7 +84,7 @@ fn main() {
 	let vertices = [
 		Vertex { position: [ 0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
 		Vertex { position: [-0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [0.0, 1.0, 0.0, 1.0] },
-		Vertex { position: [ 0.0, -1f32 / 3f32.sqrt()       , 0.0], color: [1.0, 0.0, 1.0, 1.0] }
+		Vertex { position: [ 0.0, -1f32 / 3f32.sqrt()       , 0.0], color: [0.0, 0.0, 1.0, 1.0] }
 	].to_vec();
 	let vertexBuffer = CpuAccessibleBuffer::from_iter(
 		logicalDevice.clone(),
@@ -125,16 +128,81 @@ fn main() {
 
 	let mut dynamicState = DynamicState::none();
 
-	let mut swapchainFramebuffers = swapchainImages.iter().map(|swapchainImage| {
-		Arc::new(Framebuffer::start(renderPass.clone()).add(swapchainImage.clone()).unwrap().build().unwrap())
-	});
+	let mut swapchainFrameBuffers = frameBuffersForWindowSize(&swapchainImages.clone(), renderPass.clone(), &mut dynamicState);
 
-	let commandBuffers = swapchainFramebuffers.map(|framebuffer| {
-		let mut builder = AutoCommandBufferBuilder::primary(logicalDevice.clone(), queueFamily.clone()).unwrap();
-		builder
-			.begin_render_pass(framebuffer.clone(), false, vec![ClearValue::from([0.0, 0.0, 0.0, 1.0])]).unwrap()
-			.draw(pipeline.clone(), &dynamicState, vertexBuffer.clone(), (), ()).unwrap()
-			.end_render_pass().unwrap();
-		builder
-	}).map(|builder| builder.build().unwrap());
+	let mut shouldRecreateSwapchain = false;
+	let mut previousFrameEnding = Some(now(logicalDevice.clone()).boxed());
+
+	eventsLoop.run(move |event, _, control_flow| {
+		match event {
+			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+				*control_flow = ControlFlow::Exit;
+			},
+			Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
+				shouldRecreateSwapchain = true;
+			},
+			Event::RedrawEventsCleared => {
+				previousFrameEnding.as_mut().unwrap().cleanup_finished();
+				if shouldRecreateSwapchain {
+					shouldRecreateSwapchain = false;
+					let newDimensions = Into::<[u32; 2]>::into(surface.window().inner_size());
+					let (newSwapchain, newImages) = match swapchain.recreate_with_dimensions(newDimensions) {
+						Ok(r) => r,
+						Err(_) => {
+							return;
+						}
+					};
+					swapchain = newSwapchain;
+					swapchainFrameBuffers = frameBuffersForWindowSize(&newImages, renderPass.clone(), &mut dynamicState);
+				}
+				let (numberOfImages, isSuboptimal, acquireFuture) = match acquire_next_image(swapchain.clone(), None) {
+					Ok(r) => r,
+					Err(_) => {
+						shouldRecreateSwapchain = true;
+						return;
+					}
+				};
+				if isSuboptimal {
+					shouldRecreateSwapchain = true;
+					return;
+				}
+
+				let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(logicalDevice.clone(), deviceQueue.family()).unwrap();
+				builder
+					.begin_render_pass(swapchainFrameBuffers[numberOfImages].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
+					.draw(pipeline.clone(), &dynamicState, vertexBuffer.clone(), (), ()).unwrap()
+					.end_render_pass().unwrap();
+				let commandBuffer = builder.build().unwrap();
+
+				let future = previousFrameEnding
+					.take().unwrap()
+					.join(acquireFuture)
+					.then_execute(deviceQueue.clone(), commandBuffer).unwrap()
+					.then_swapchain_present(deviceQueue.clone(), swapchain.clone(), numberOfImages)
+					.then_signal_fence_and_flush();
+				previousFrameEnding = match future {
+					Ok(f) => Some(f.boxed()),
+					Err(_) => {
+						shouldRecreateSwapchain = true;
+						Some(now(logicalDevice.clone()).boxed())
+					}
+				}
+			},
+			_ => ()
+		}
+	});
+}
+
+fn frameBuffersForWindowSize(images: &[Arc<SwapchainImage<Window>>], renderPass: Arc<dyn RenderPassAbstract + Send + Sync>, dynamicState: &mut DynamicState) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+	let dimensions = images[0].dimensions();
+	let viewport = Viewport {
+		origin: [0.0, 0.0],
+		dimensions: [dimensions[0] as f32, dimensions[1] as f32],
+		depth_range: 0.0..1.0,
+	};
+	dynamicState.viewports = Some(vec![viewport]);
+	return images.iter()
+		.map(|image| Arc::new(
+			Framebuffer::start(renderPass.clone()).add(image.clone()).unwrap().build().unwrap()) as Arc<dyn FramebufferAbstract + Send + Sync>
+		).collect::<Vec<_>>()
 }
