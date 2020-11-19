@@ -82,9 +82,10 @@ fn main() {
 	vulkano::impl_vertex!(Vertex, position, color);
 
 	let vertices = [
-		Vertex { position: [ 0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
-		Vertex { position: [-0.5,  1f32 / 3f32.sqrt() / 2f32, 0.0], color: [0.0, 1.0, 0.0, 1.0] },
-		Vertex { position: [ 0.0, -1f32 / 3f32.sqrt()       , 0.0], color: [0.0, 0.0, 1.0, 1.0] }
+		Vertex { position: [ 0.5, 0.5, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
+		Vertex { position: [-0.5, 0.5, 0.0], color: [0.0, 1.0, 0.0, 1.0] },
+		Vertex { position: [-0.5,-0.5, 0.0], color: [0.0, 0.0, 1.0, 1.0] },
+		Vertex { position: [ 0.5,-0.5, 0.0], color: [1.0, 1.0, 1.0, 1.0] }
 	].to_vec();
 	let vertexBuffer = CpuAccessibleBuffer::from_iter(
 		logicalDevice.clone(),
@@ -92,7 +93,7 @@ fn main() {
 		false,
 		vertices.iter().cloned()
 	).unwrap();
-	let indices = [0u32, 1, 2];
+	let indices = [0u32, 2, 1, 0, 2, 3];
 	let indexBuffer = CpuAccessibleBuffer::from_iter(
 		logicalDevice.clone(),
 		BufferUsage { index_buffer: true, ..BufferUsage::none() },
