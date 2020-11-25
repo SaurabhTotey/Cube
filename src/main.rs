@@ -10,7 +10,7 @@ use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExc
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::format::Format;
 use std::cmp::min;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer};
 use std::sync::Arc;
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, FramebufferAbstract};
@@ -94,12 +94,20 @@ fn main() {
 		vertices.iter().cloned()
 	).unwrap();
 	let indices = [0u32, 2, 1, 0, 2, 3];
-	let indexBuffer = CpuAccessibleBuffer::from_iter(
-		logicalDevice.clone(),
+	let indexBuffer = ImmutableBuffer::from_iter(
+		indices.iter().cloned(),
 		BufferUsage { index_buffer: true, ..BufferUsage::none() },
-		false,
-		indices.iter().cloned()
-	).unwrap();
+		deviceQueue.clone()
+	).unwrap().0;
+
+	// let uniformBuffers = swapchainImages.iter().map(|swapchainImage| {
+	// 	CpuAccessibleBuffer::from_iter(
+	// 		logicalDevice.clone(),
+	// 		BufferUsage { uniform_buffer: true, ..BufferUsage::none() },
+	// 		false,
+	//
+	// 	)
+	// });
 
 	mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 	mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
