@@ -5,19 +5,47 @@ use std::borrow::Cow;
 use winit::event_loop::{EventLoop, ControlFlow};
 use winit::window::{WindowBuilder, Window};
 use vulkano_win::VkSurfaceBuild;
-use vulkano::device::{Device, Features, DeviceExtensions};
-use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, acquire_next_image};
+use vulkano::device::{Device, Features, DeviceExtensions, Queue};
+use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, acquire_next_image, Capabilities, Surface};
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::format::Format;
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer};
 use std::sync::Arc;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, FramebufferAbstract};
-use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
+use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder, AutoCommandBuffer};
 use winit::event::{Event, WindowEvent};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture};
+use vulkano::pipeline::shader::GraphicsEntryPointAbstract;
+
+#[derive(Default, Copy, Clone)]
+struct Vertex {
+	position: [f32; 3],
+	color: [f32; 4]
+}
+vulkano::impl_vertex!(Vertex, position, color);
+
+struct Application {
+	instance: Arc<Instance>,
+	physicalDeviceIndex: usize,
+	eventsLoop: EventLoop<()>,
+	surface: Arc<Surface<Window>>,
+	logicalDevice: Arc<Device>,
+	graphicsQueue: Arc<Queue>,
+	presentQueue: Arc<Queue>,
+	swapchain: Arc<Swapchain<Window>>,
+	swapchainImages: Vec<Arc<SwapchainImage<Window>>>,
+	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+	renderPass: Arc<dyn RenderPassAbstract + Send + Sync>,
+	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+	vertexBuffer: Arc<CpuAccessibleBuffer<Vertex>>,
+	indexBuffer: Arc<ImmutableBuffer<u32>>,
+	commandBuffers: Vec<Arc<AutoCommandBuffer>>,
+	previousFrameEnd: Option<Box<dyn GpuFuture>>,
+	shouldRecreateSwapchain: bool
+}
 
 fn main() {
 	let instance = Instance::new(
@@ -73,13 +101,6 @@ fn main() {
 			*colorSpace
 		).unwrap()
 	};
-
-	#[derive(Default, Copy, Clone)]
-	struct Vertex {
-		position: [f32; 3],
-		color: [f32; 4]
-	}
-	vulkano::impl_vertex!(Vertex, position, color);
 
 	let vertices = [
 		Vertex { position: [ 0.5, 0.5, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
