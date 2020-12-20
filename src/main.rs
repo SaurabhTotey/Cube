@@ -30,7 +30,6 @@ vulkano::impl_vertex!(Vertex, position, color);
 struct Application {
 	instance: Arc<Instance>,
 	physicalDeviceIndex: usize,
-	eventsLoop: EventLoop<()>,
 	surface: Arc<Surface<Window>>,
 	logicalDevice: Arc<Device>,
 	graphicsQueue: Arc<Queue>,
@@ -49,7 +48,7 @@ struct Application {
 
 impl Application {
 
-	pub fn new() -> Self {
+	pub fn new() -> (Self, EventLoop<()>) {
 		let instance = Instance::new(
 			Some(&ApplicationInfo {
 				application_name: Some(Cow::from("Cube!")),
@@ -116,10 +115,9 @@ impl Application {
 
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
-		return Self {
+		return (Self {
 			instance,
 			physicalDeviceIndex,
-			eventsLoop,
 			surface,
 			logicalDevice,
 			graphicsQueue,
@@ -134,11 +132,10 @@ impl Application {
 			commandBuffers,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false
-		}
+		}, eventsLoop)
 	}
 
-	pub fn run(mut self) {
-		let eventsLoop = self.eventsLoop;
+	pub fn run(mut self, eventsLoop: EventLoop<()>) {
 		eventsLoop.run(move |event, _, controlFlow| {
 			match event {
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::CloseRequested, .. } => { *controlFlow = ControlFlow::Exit },
@@ -306,6 +303,6 @@ impl Application {
 }
 
 fn main() {
-	let mut application = Application::new();
-	application.run();
+	let (application, eventsLoop) = Application::new();
+	application.run(eventsLoop);
 }
