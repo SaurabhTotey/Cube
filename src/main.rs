@@ -9,16 +9,17 @@ use vulkano::device::{Device, Features, DeviceExtensions, Queue};
 use vulkano::swapchain::{Swapchain, SurfaceTransform, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, acquire_next_image, Capabilities, Surface};
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::format::Format;
-use std::cmp::min;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer};
+use std::cmp::{min, max};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, BufferAccess};
 use std::sync::Arc;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, FramebufferAbstract};
 use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder, AutoCommandBuffer};
 use winit::event::{Event, WindowEvent};
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::sync::{now, GpuFuture};
+use vulkano::sync::{now, GpuFuture, SharingMode};
 use vulkano::pipeline::shader::GraphicsEntryPointAbstract;
+use std::collections::HashSet;
 
 #[derive(Default, Copy, Clone)]
 struct Vertex {
@@ -37,9 +38,9 @@ struct Application {
 	presentQueue: Arc<Queue>,
 	swapchain: Arc<Swapchain<Window>>,
 	swapchainImages: Vec<Arc<SwapchainImage<Window>>>,
-	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	renderPass: Arc<dyn RenderPassAbstract + Send + Sync>,
 	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	vertexBuffer: Arc<CpuAccessibleBuffer<Vertex>>,
 	indexBuffer: Arc<ImmutableBuffer<u32>>,
 	commandBuffers: Vec<Arc<AutoCommandBuffer>>,
@@ -47,60 +48,135 @@ struct Application {
 	shouldRecreateSwapchain: bool
 }
 
-fn main() {
-	let instance = Instance::new(
-		Some(&ApplicationInfo {
-			application_name: Some(Cow::from("Cube!")),
-			..ApplicationInfo::default()
-		}),
-		&vulkano_win::required_extensions(),
-		None
-	).unwrap();
-	let physicalDevice = PhysicalDevice::enumerate(&instance).next().unwrap();
+impl Application {
 
-	let eventsLoop = EventLoop::new();
-	let surface = WindowBuilder::new()
-		.with_title("Cube!")
-		.build_vk_surface(&eventsLoop, instance.clone()).unwrap();
-	let surfaceCapabilities = surface.capabilities(physicalDevice).unwrap();
+	fn new() -> Self {
+		let instance = Instance::new(
+			Some(&ApplicationInfo {
+				application_name: Some(Cow::from("Cube!")),
+				..ApplicationInfo::default()
+			}),
+			&vulkano_win::required_extensions(),
+			None
+		).unwrap();
 
-	let queueFamily = physicalDevice.queue_families()
-		.find(|&family| family.supports_graphics() && surface.is_supported(family).unwrap_or(false)).unwrap();
-	let (logicalDevice, mut deviceQueues) = { Device::new(
-		physicalDevice,
-		&Features::none(),
-		&DeviceExtensions { khr_swapchain: true, ..DeviceExtensions::none() },
-		[(queueFamily, 1.0)].iter().cloned(),
-	).unwrap() };
-	let deviceQueue = deviceQueues.next().unwrap();
+		let eventsLoop = EventLoop::new();
+		let surface = WindowBuilder::new()
+			.with_title("Cube!")
+			.build_vk_surface(&eventsLoop, instance.clone()).unwrap();
 
-	let (imageFormat, colorSpace) = surfaceCapabilities.supported_formats.iter()
-		.find(|formatAndColorSpace| formatAndColorSpace.0 == Format::B8G8R8A8Srgb && formatAndColorSpace.1 == ColorSpace::SrgbNonLinear)
-		.unwrap_or(surfaceCapabilities.supported_formats.iter().next().unwrap());
-	let (mut swapchain, swapchainImages) = {
+		let getSurfaceCapabilities = |physicalDevice: &PhysicalDevice| surface.capabilities(*physicalDevice).unwrap();
+		let getGraphicsFamilyIndex = |physicalDevice: &PhysicalDevice| physicalDevice.queue_families().position(|family| family.supports_graphics());
+		let getPresentFamilyIndex = |physicalDevice: &PhysicalDevice, surface: &Arc<Surface<Window>>| physicalDevice.queue_families().position(|family| surface.is_supported(family).unwrap_or(false));
+
+		let requiredExtensions = DeviceExtensions { khr_swapchain: true, ..DeviceExtensions::none() };
+		let physicalDeviceIndex = PhysicalDevice::enumerate(&instance).position(|physicalDevice| {
+			let hasExtensions = DeviceExtensions::supported_by_device(physicalDevice).intersection(&requiredExtensions) == requiredExtensions;
+			let surfaceCapabilities = getSurfaceCapabilities(&physicalDevice);
+			return !surfaceCapabilities.supported_formats.is_empty() && surfaceCapabilities.present_modes.iter().next().is_some() && hasExtensions && getGraphicsFamilyIndex(&physicalDevice).is_some() && getPresentFamilyIndex(&physicalDevice, &surface).is_some();
+		}).unwrap();
+
+		let physicalDevice = PhysicalDevice::from_index(&instance, physicalDeviceIndex).unwrap();
+		let queueFamilies = [getGraphicsFamilyIndex(&physicalDevice), getPresentFamilyIndex(&physicalDevice, &surface)].iter()
+			.filter(|indexOption| indexOption.is_some())
+			.collect::<HashSet<usize>>().iter()
+			.map(|i| (physicalDevice.queue_families().nth(*i).unwrap(), 1.0));
+		let (logicalDevice, mut queues) = Device::new(physicalDevice, &Features::none(), requiredExtensions, queueFamilies).unwrap();
+
+		let graphicsQueue = queues.next().unwrap();
+		let presentQueue = queues.next().unwrap_or(graphicsQueue.clone());
+
+		let (swapchain, swapchainImages) = Self::createSwapchain(&getSurfaceCapabilities(&physicalDevice), &surface, &logicalDevice, &graphicsQueue, &presentQueue, None);
+		let renderPass = Self::createRenderPass(&logicalDevice, swapchain.format());
+
+		return Self {
+			instance,
+			physicalDeviceIndex,
+			eventsLoop,
+			surface,
+			logicalDevice,
+			graphicsQueue,
+			presentQueue,
+			swapchain,
+			swapchainImages
+		}
+	}
+
+	fn createSwapchain(surfaceCapabilities: &Capabilities, surface: &Arc<Surface<Window>>, logicalDevice: &Arc<Device>, graphicsQueue: &Arc<Queue>, presentQueue: &Arc<Queue>, oldSwapchain: Option<Arc<Swapchain<Window>>>) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
+		let (imageFormat, colorSpace) = surfaceCapabilities.supported_formats.iter()
+			.find(|formatAndColorSpace| formatAndColorSpace.0 == Format::B8G8R8A8Srgb && formatAndColorSpace.1 == ColorSpace::SrgbNonLinear)
+			.unwrap_or(surfaceCapabilities.supported_formats.iter().next().unwrap());
+		let presentMode = if surfaceCapabilities.present_modes.mailbox { PresentMode::Mailbox } else if surfaceCapabilities.present_modes.immediate { PresentMode::Immediate } else { PresentMode::Fifo };
+
+		let imageCount = min(surfaceCapabilities.min_image_count + 1, surfaceCapabilities.max_image_count.unwrap_or(u32::MAX));
+		let imageUsage = ImageUsage::color_attachment();
+		let sharingMode: SharingMode = if *graphicsQueue != *presentQueue { vec![graphicsQueue, presentQueue].as_slice().into() } else { graphicsQueue.into() };
 		let supportedAlpha = surfaceCapabilities.supported_composite_alpha.iter()
 			.find(|&compositeAlpha| compositeAlpha == CompositeAlpha::Opaque)
 			.unwrap_or(surfaceCapabilities.supported_composite_alpha.iter().next().unwrap());
 		let dimensions: [u32; 2] = surface.window().inner_size().into();
-		let presentMode = if surfaceCapabilities.present_modes.mailbox { PresentMode::Mailbox } else { PresentMode::Fifo };
-		let numberOfImages = min(surfaceCapabilities.min_image_count + 1, surfaceCapabilities.max_image_count.unwrap_or(surfaceCapabilities.min_image_count + 1));
-		Swapchain::new(
-			logicalDevice.clone(),
-			surface.clone(),
-			numberOfImages,
-			*imageFormat,
-			dimensions,
-			1,
-			ImageUsage::color_attachment(),
-			&deviceQueue,
-			SurfaceTransform::Identity,
-			supportedAlpha,
-			presentMode,
-			FullscreenExclusive::Default,
-			true,
-			*colorSpace
-		).unwrap()
-	};
+
+		return if oldSwapchain.is_none() {
+			Swapchain::new(
+				logicalDevice.clone(),
+				surface.clone(),
+				imageCount,
+				*imageFormat,
+				dimensions,
+				1,
+				imageUsage,
+				&sharingMode,
+				surfaceCapabilities.current_transform,
+				supportedAlpha,
+				presentMode,
+				FullscreenExclusive::Default,
+				true,
+				*colorSpace,
+			).unwrap()
+		} else {
+			Swapchain::with_old_swapchain(
+				logicalDevice.clone(),
+				surface.clone(),
+				imageCount,
+				*imageFormat,
+				dimensions,
+				1,
+				imageUsage,
+				&sharingMode,
+				surfaceCapabilities.current_transform,
+				supportedAlpha,
+				presentMode,
+				FullscreenExclusive::Default,
+				true,
+				*colorSpace,
+				oldSwapchain.unwrap()
+			).unwrap()
+		}
+	}
+
+	fn createRenderPass(logicalDevice: &Arc<Device>, colorFormat: Format) -> Arc<dyn RenderPassAbstract + Send + Sync> {
+		return Arc::new(
+			vulkano::single_pass_renderpass!(
+				logicalDevice.clone(),
+				attachments: {
+					color: {
+						load: Clear,
+						store: Store,
+						format: colorFormat,
+						samples: 1,
+					}
+				},
+				pass: {
+					color: [color],
+					depth_stencil: {}
+				}
+			).unwrap()
+		);
+	}
+
+}
+
+fn main() {
 
 	let vertices = [
 		Vertex { position: [ 0.5, 0.5, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
@@ -134,24 +210,6 @@ fn main() {
 	mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
 	let vertexShader = VertexShader::Shader::load(logicalDevice.clone()).unwrap();
 	let fragmentShader = FragmentShader::Shader::load(logicalDevice.clone()).unwrap();
-
-	let renderPass = Arc::new(
-		vulkano::single_pass_renderpass!(
-			logicalDevice.clone(),
-		    attachments: {
-		        color: {
-		            load: Clear,
-		            store: Store,
-		            format: swapchain.format(),
-		            samples: 1,
-		        }
-		    },
-		    pass: {
-		        color: [color],
-		        depth_stencil: {}
-		    }
-		).unwrap()
-	);
 
 	let pipeline = Arc::new(
 		GraphicsPipeline::start()
