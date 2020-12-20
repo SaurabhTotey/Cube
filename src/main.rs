@@ -2,11 +2,11 @@
 
 use vulkano::instance::{Instance, ApplicationInfo, PhysicalDevice};
 use std::borrow::Cow;
-use winit::event_loop::EventLoop;
+use winit::event_loop::{EventLoop, ControlFlow};
 use winit::window::{WindowBuilder, Window};
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions, Queue};
-use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, Capabilities, Surface};
+use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, Capabilities, Surface, acquire_next_image};
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::format::Format;
 use std::cmp::min;
@@ -49,7 +49,7 @@ struct Application {
 
 impl Application {
 
-	fn new() -> Self {
+	pub fn new() -> Self {
 		let instance = Instance::new(
 			Some(&ApplicationInfo {
 				application_name: Some(Cow::from("Cube!")),
@@ -135,6 +135,58 @@ impl Application {
 			previousFrameEnd,
 			shouldRecreateSwapchain: false
 		}
+	}
+
+	pub fn run(mut self) {
+		let eventsLoop = self.eventsLoop;
+		eventsLoop.run(move |event, _, controlFlow| {
+			match event {
+				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::CloseRequested, .. } => { *controlFlow = ControlFlow::Exit },
+				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::Resized(_), .. } => { self.shouldRecreateSwapchain = true; }
+				winit::event::Event::RedrawEventsCleared => {
+					self.previousFrameEnd.as_mut().unwrap().cleanup_finished();
+
+					if self.shouldRecreateSwapchain {
+						let surfaceCapabilities = self.surface.capabilities(PhysicalDevice::from_index(&self.instance, self.physicalDeviceIndex).unwrap()).unwrap();
+						let (newSwapchain, newSwapchainImages) = Self::createSwapchain(&surfaceCapabilities, &self.surface, &self.logicalDevice, &self.graphicsQueue, &self.presentQueue, Some(self.swapchain.clone()));
+						self.swapchain = newSwapchain;
+						self.swapchainImages = newSwapchainImages;
+						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
+						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
+						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass);
+						self.commandBuffers = Self::createCommandBuffers(&self.graphicsQueue, &self.swapchainFramebuffers, &self.logicalDevice, &self.graphicsPipeline, &self.vertexBuffer, &self.indexBuffer);
+						self.shouldRecreateSwapchain = false;
+					}
+
+					let (imageIndex, isSuboptimal, swapchainAcquireFuture) = match acquire_next_image(self.swapchain.clone(), None) {
+						Ok(value) => value,
+						Err(_) => {
+							self.shouldRecreateSwapchain = true;
+							return;
+						}
+					};
+					if isSuboptimal {
+						self.shouldRecreateSwapchain = true;
+					}
+					let commandBuffer = self.commandBuffers[imageIndex].clone();
+
+					let future = self.previousFrameEnd
+						.take().unwrap()
+						.join(swapchainAcquireFuture)
+						.then_execute(self.graphicsQueue.clone(), commandBuffer).unwrap()
+						.then_swapchain_present(self.presentQueue.clone(), self.swapchain.clone(), imageIndex)
+						.then_signal_fence_and_flush();
+					match future {
+						Ok(f) => { self.previousFrameEnd = Some(Box::new(f)); },
+						Err(_) => {
+							self.shouldRecreateSwapchain = true;
+							self.previousFrameEnd = Some(Box::new(now(self.logicalDevice.clone())));
+						}
+					}
+				},
+				_ => ()
+			}
+		});
 	}
 
 	fn createSwapchain(surfaceCapabilities: &Capabilities, surface: &Arc<Surface<Window>>, logicalDevice: &Arc<Device>, graphicsQueue: &Arc<Queue>, presentQueue: &Arc<Queue>, oldSwapchain: Option<Arc<Swapchain<Window>>>) -> (Arc<Swapchain<Window>>, Vec<Arc<SwapchainImage<Window>>>) {
@@ -254,5 +306,6 @@ impl Application {
 }
 
 fn main() {
-	let application = Application::new();
+	let mut application = Application::new();
+	application.run();
 }
