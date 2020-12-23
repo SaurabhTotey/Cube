@@ -19,6 +19,10 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::HashSet;
 use winit::dpi::LogicalSize;
+use cgmath::Matrix4;
+use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
+use vulkano::descriptor::pipeline_layout::PipelineLayoutDesc;
+use vulkano::descriptor::PipelineLayoutAbstract;
 
 #[derive(Default, Copy, Clone)]
 struct Vertex {
@@ -26,6 +30,13 @@ struct Vertex {
 	color: [f32; 4]
 }
 vulkano::impl_vertex!(Vertex, position, color);
+
+#[derive(Copy, Clone)]
+struct ModelViewProjectionTransformation {
+	modelTransformation: Matrix4<f32>,
+	viewTransformation: Matrix4<f32>,
+	projectionTransformation: Matrix4<f32>
+}
 
 struct Application {
 	instance: Arc<Instance>,
@@ -41,6 +52,7 @@ struct Application {
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	vertexBuffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
+	descriptorSetsPool: Arc<FixedSizeDescriptorSetsPool>,
 	commandBuffers: Vec<Arc<AutoCommandBuffer>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool
@@ -111,6 +123,9 @@ impl Application {
 			graphicsQueue.clone()
 		).unwrap().0;
 
+		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
+		let descriptorSetsPool = Arc::new(FixedSizeDescriptorSetsPool::new(layout.clone()));
+
 		let commandBuffers = Self::createCommandBuffers(&graphicsQueue, &swapchainFramebuffers, &logicalDevice, &graphicsPipeline, &vertexBuffer, &indexBuffer);
 
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
@@ -129,6 +144,7 @@ impl Application {
 			swapchainFramebuffers,
 			vertexBuffer,
 			indexBuffer,
+			descriptorSetsPool,
 			commandBuffers,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false
