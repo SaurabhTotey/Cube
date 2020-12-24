@@ -10,7 +10,7 @@ use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace
 use vulkano::image::{ImageUsage, SwapchainImage};
 use vulkano::format::Format;
 use std::cmp::min;
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, CpuBufferPool};
 use std::sync::Arc;
 use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, FramebufferAbstract};
@@ -21,7 +21,6 @@ use std::collections::HashSet;
 use winit::dpi::LogicalSize;
 use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
-use vulkano::descriptor::pipeline_layout::PipelineLayoutDesc;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::time::Instant;
 
@@ -56,10 +55,10 @@ struct Application {
 	renderPass: Arc<dyn RenderPassAbstract + Send + Sync>,
 	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-	vertexBuffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+	vertexBuffer: Arc<ImmutableBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: Arc<FixedSizeDescriptorSetsPool>,
-	uniformBuffers: Vec<Arc<CpuAccessibleBuffer<ModelViewProjectionTransformation>>>,
+	uniformBufferPool: CpuBufferPool<ModelViewProjectionTransformation>,
 	commandBuffers: Vec<Arc<AutoCommandBuffer>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
@@ -118,12 +117,11 @@ impl Application {
 			Vertex { position: [-0.5,-0.5, 0.0], color: [0.0, 0.0, 1.0, 1.0] },
 			Vertex { position: [ 0.5,-0.5, 0.0], color: [1.0, 1.0, 1.0, 1.0] }
 		].to_vec();
-		let vertexBuffer = CpuAccessibleBuffer::from_iter(
-			logicalDevice.clone(),
+		let vertexBuffer = ImmutableBuffer::from_iter(
+			vertices.iter().cloned(),
 			BufferUsage::vertex_buffer(),
-			false,
-			vertices.iter().cloned()
-		).unwrap();
+			graphicsQueue.clone()
+		).unwrap().0;
 		let indices = [0u32, 2, 1, 0, 2, 3];
 		let indexBuffer = ImmutableBuffer::from_iter(
 			indices.iter().cloned(),
@@ -133,7 +131,7 @@ impl Application {
 
 		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
 		let descriptorSetsPool = Arc::new(FixedSizeDescriptorSetsPool::new(layout.clone()));
-		let uniformBuffers = Self::createUniformBuffers(swapchainFramebuffers.len(), &logicalDevice);
+		let uniformBufferPool = CpuBufferPool::<ModelViewProjectionTransformation>::new(logicalDevice.clone(), BufferUsage::uniform_buffer_transfer_destination());
 
 		let commandBuffers = Self::createCommandBuffers(&graphicsQueue, &swapchainFramebuffers, &logicalDevice, &graphicsPipeline, &vertexBuffer, &indexBuffer);
 
@@ -154,7 +152,7 @@ impl Application {
 			vertexBuffer,
 			indexBuffer,
 			descriptorSetsPool,
-			uniformBuffers,
+			uniformBufferPool,
 			commandBuffers,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
@@ -178,7 +176,6 @@ impl Application {
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
 						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
 						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass);
-						self.uniformBuffers = Self::createUniformBuffers(self.swapchainFramebuffers.len(), &self.logicalDevice);
 						self.commandBuffers = Self::createCommandBuffers(&self.graphicsQueue, &self.swapchainFramebuffers, &self.logicalDevice, &self.graphicsPipeline, &self.vertexBuffer, &self.indexBuffer);
 						self.shouldRecreateSwapchain = false;
 					}
@@ -200,13 +197,6 @@ impl Application {
 						viewTransformation: Matrix4::look_at(Point3::new(2f32, 2f32, 2f32), Point3::new(0f32, 0f32, 0f32), Vector3::new(0f32, 0f32, 1f32)),
 						projectionTransformation: cgmath::perspective(Rad::from(Deg(45f32)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10f32)
 					};
-					self.uniformBuffers[imageIndex] = CpuAccessibleBuffer::from_data(
-						self.logicalDevice.clone(),
-						BufferUsage::uniform_buffer_transfer_destination(),
-						false,
-						transformation
-					).unwrap();
-					let set = self.descriptorSetsPool.next().add_buffer(self.uniformBuffers[imageIndex].clone()).unwrap().build().unwrap();
 
 					let commandBuffer = self.commandBuffers[imageIndex].clone();
 
@@ -331,7 +321,7 @@ impl Application {
 		}).collect();
 	}
 
-	fn createCommandBuffers(graphicsQueue: &Arc<Queue>, swapchainFramebuffers: &Vec<Arc<dyn FramebufferAbstract + Send + Sync>>, logicalDevice: &Arc<Device>, graphicsPipeline: &Arc<dyn GraphicsPipelineAbstract + Send + Sync>, vertexBuffer: &Arc<CpuAccessibleBuffer<[Vertex]>>, indexBuffer: &Arc<ImmutableBuffer<[u32]>>) -> Vec<Arc<AutoCommandBuffer>> {
+	fn createCommandBuffers(graphicsQueue: &Arc<Queue>, swapchainFramebuffers: &Vec<Arc<dyn FramebufferAbstract + Send + Sync>>, logicalDevice: &Arc<Device>, graphicsPipeline: &Arc<dyn GraphicsPipelineAbstract + Send + Sync>, vertexBuffer: &Arc<ImmutableBuffer<[Vertex]>>, indexBuffer: &Arc<ImmutableBuffer<[u32]>>) -> Vec<Arc<AutoCommandBuffer>> {
 		let queueFamily = graphicsQueue.family();
 		return swapchainFramebuffers.iter().map(|framebuffer| {
 			let mut builder = AutoCommandBufferBuilder::primary_simultaneous_use(logicalDevice.clone(), queueFamily).unwrap();
@@ -341,17 +331,6 @@ impl Application {
 				.end_render_pass().unwrap();
 			return Arc::new(builder.build().unwrap());
 		}).collect();
-	}
-
-	fn createUniformBuffers(numberOfBuffers: usize, logicalDevice: &Arc<Device>) -> Vec<Arc<CpuAccessibleBuffer<ModelViewProjectionTransformation>>> {
-		return (0 .. numberOfBuffers).map(|i|
-			CpuAccessibleBuffer::from_data(
-				logicalDevice.clone(),
-				BufferUsage::uniform_buffer_transfer_destination(),
-				false,
-				ModelViewProjectionTransformation::default()
-			).unwrap()
-		).collect();
 	}
 
 }
