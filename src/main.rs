@@ -111,17 +111,28 @@ impl Application {
 		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass);
 
 		let vertices = [
-			Vertex { position: [ 0.5, 0.5, 0.0], color: [1.0, 0.0, 0.0, 1.0] },
-			Vertex { position: [-0.5, 0.5, 0.0], color: [0.0, 1.0, 0.0, 1.0] },
-			Vertex { position: [-0.5,-0.5, 0.0], color: [0.0, 0.0, 1.0, 1.0] },
-			Vertex { position: [ 0.5,-0.5, 0.0], color: [1.0, 1.0, 1.0, 1.0] }
+			Vertex { position: [ 0.5, 0.5,-0.5], color: [1.0, 0.0, 0.0, 1.0] },
+			Vertex { position: [-0.5, 0.5,-0.5], color: [0.0, 1.0, 0.0, 1.0] },
+			Vertex { position: [-0.5,-0.5,-0.5], color: [0.0, 0.0, 1.0, 1.0] },
+			Vertex { position: [ 0.5,-0.5,-0.5], color: [1.0, 1.0, 1.0, 1.0] },
+			Vertex { position: [ 0.5, 0.5, 0.5], color: [1.0, 0.0, 0.0, 1.0] },
+			Vertex { position: [-0.5, 0.5, 0.5], color: [0.0, 1.0, 0.0, 1.0] },
+			Vertex { position: [-0.5,-0.5, 0.5], color: [0.0, 0.0, 1.0, 1.0] },
+			Vertex { position: [ 0.5,-0.5, 0.5], color: [1.0, 1.0, 1.0, 1.0] }
 		].to_vec();
 		let vertexBuffer = ImmutableBuffer::from_iter(
 			vertices.iter().cloned(),
 			BufferUsage::vertex_buffer(),
 			graphicsQueue.clone()
 		).unwrap().0;
-		let indices = [0u32, 2, 1, 0, 2, 3];
+		let indices = [
+			0u32, 2, 1, 0, 2, 3, //bottom face
+			4   , 6, 5, 4, 6, 7, //top face
+			0   , 1, 4, 1, 4, 5, //red-green side face
+			1   , 2, 6, 1, 6, 5, //green-blue side face
+			2   , 3, 6, 3, 6, 7, //blue-white side face
+			3   , 0, 7, 0, 7, 4  //white-red side face
+		];
 		let indexBuffer = ImmutableBuffer::from_iter(
 			indices.iter().cloned(),
 			BufferUsage::index_buffer(),
