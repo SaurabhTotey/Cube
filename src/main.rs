@@ -59,7 +59,6 @@ struct Application {
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
 	uniformBufferPool: CpuBufferPool<ModelViewProjectionTransformation>,
-	commandBufferBuilders: Vec<AutoCommandBufferBuilder>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
 	startTime: Instant
@@ -133,8 +132,6 @@ impl Application {
 		let descriptorSetsPool = FixedSizeDescriptorSetsPool::new(layout.clone());
 		let uniformBufferPool = CpuBufferPool::<ModelViewProjectionTransformation>::uniform_buffer(logicalDevice.clone());
 
-		let commandBufferBuilders = Self::createCommandBufferBuilders(&graphicsQueue, &swapchainFramebuffers.len(), &logicalDevice);
-
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
 		return (Self {
@@ -153,7 +150,6 @@ impl Application {
 			indexBuffer,
 			descriptorSetsPool,
 			uniformBufferPool,
-			commandBufferBuilders,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
 			startTime: Instant::now()
@@ -176,7 +172,6 @@ impl Application {
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
 						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
 						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass);
-						self.commandBufferBuilders = Self::createCommandBufferBuilders(&self.graphicsQueue, &self.swapchainFramebuffers.len(), &self.logicalDevice);
 						self.shouldRecreateSwapchain = false;
 					}
 
@@ -192,20 +187,21 @@ impl Application {
 					}
 
 					let timePassed = Instant::now() - self.startTime;
-					let transformation = ModelViewProjectionTransformation {
-						modelTransformation: Matrix4::from_angle_z(Rad::from(Deg(timePassed.as_secs_f32() * 0.18))),
-						viewTransformation: Matrix4::look_at(Point3::new(2f32, 2f32, 2f32), Point3::new(0f32, 0f32, 0f32), Vector3::new(0f32, 0f32, 1f32)),
-						projectionTransformation: cgmath::perspective(Rad::from(Deg(45f32)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10f32)
+					let mut transformation = ModelViewProjectionTransformation {
+						modelTransformation: Matrix4::from_angle_z(Rad(-timePassed.as_secs_f32())),
+						viewTransformation: Matrix4::look_at(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+						projectionTransformation: cgmath::perspective(Rad::from(Deg(45.0)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10.0)
 					};
+					transformation.projectionTransformation.y *= -1.0;
 					let uniformBuffer = self.uniformBufferPool.next(transformation).unwrap();
 					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
 
-					let mut commandBufferBuilder = &mut self.commandBufferBuilders[imageIndex];
-					let commandBuffer = commandBufferBuilder
+					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
+					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
 						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet, ()).unwrap()
-						.end_render_pass().unwrap()
-						.build().unwrap();
+						.end_render_pass().unwrap();
+					let commandBuffer = commandBufferBuilder.build().unwrap();
 
 					let future = self.previousFrameEnd
 						.take().unwrap()
@@ -326,11 +322,6 @@ impl Application {
 			let framebuffer: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(Framebuffer::start(renderPass.clone()).add(image.clone()).unwrap().build().unwrap());
 			return framebuffer;
 		}).collect();
-	}
-
-	fn createCommandBufferBuilders(graphicsQueue: &Arc<Queue>, numberOfSwapchainFramebuffers: &usize, logicalDevice: &Arc<Device>, ) -> Vec<AutoCommandBufferBuilder> {
-		let queueFamily = graphicsQueue.family();
-		return (0 .. *numberOfSwapchainFramebuffers).map(|_| AutoCommandBufferBuilder::primary_simultaneous_use(logicalDevice.clone(), queueFamily).unwrap()).collect();
 	}
 
 }
