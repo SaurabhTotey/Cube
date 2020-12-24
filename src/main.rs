@@ -7,7 +7,7 @@ use winit::window::{WindowBuilder, Window};
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions, Queue};
 use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, Capabilities, Surface, acquire_next_image};
-use vulkano::image::{ImageUsage, SwapchainImage};
+use vulkano::image::{ImageUsage, SwapchainImage, AttachmentImage};
 use vulkano::format::Format;
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, ImmutableBuffer, CpuBufferPool};
@@ -54,6 +54,7 @@ struct Application {
 	swapchainImages: Vec<Arc<SwapchainImage<Window>>>,
 	renderPass: Arc<dyn RenderPassAbstract + Send + Sync>,
 	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+	depthBuffer: Arc<AttachmentImage>,
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	vertexBuffer: Arc<ImmutableBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
@@ -108,7 +109,9 @@ impl Application {
 		let (swapchain, swapchainImages) = Self::createSwapchain(&getSurfaceCapabilities(&physicalDevice), &surface, &logicalDevice, &graphicsQueue, &presentQueue, None);
 		let renderPass = Self::createRenderPass(&logicalDevice, swapchain.format());
 		let graphicsPipeline = Self::createGraphicsPipeline(&logicalDevice, swapchain.dimensions(), &renderPass);
-		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass);
+
+		let depthBuffer = AttachmentImage::transient(logicalDevice.clone(), swapchain.dimensions(), Format::D16Unorm).unwrap();
+		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass, &depthBuffer);
 
 		let vertices = [
 			Vertex { position: [ 0.5, 0.5,-0.5], color: [1.0, 0.0, 0.0, 1.0] },
@@ -156,6 +159,7 @@ impl Application {
 			swapchainImages,
 			renderPass,
 			graphicsPipeline,
+			depthBuffer,
 			swapchainFramebuffers,
 			vertexBuffer,
 			indexBuffer,
@@ -182,7 +186,8 @@ impl Application {
 						self.swapchainImages = newSwapchainImages;
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
 						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
-						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass);
+						self.depthBuffer = AttachmentImage::transient(self.logicalDevice.clone(), self.swapchain.dimensions(), Format::D16Unorm).unwrap();
+						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass, &self.depthBuffer);
 						self.shouldRecreateSwapchain = false;
 					}
 
@@ -209,7 +214,7 @@ impl Application {
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
-						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into()]).unwrap()
+						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
 						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet, ()).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
@@ -295,11 +300,17 @@ impl Application {
 						store: Store,
 						format: colorFormat,
 						samples: 1,
+					},
+					depth: {
+						load: Clear,
+						store: DontCare,
+						format: Format::D16Unorm,
+						samples: 1,
 					}
 				},
 				pass: {
 					color: [color],
-					depth_stencil: {}
+					depth_stencil: {depth}
 				}
 			).unwrap()
 		);
@@ -323,15 +334,19 @@ impl Application {
 				.vertex_shader(vertexShader.main_entry_point(), ())
 				.viewports(vec![viewport])
 				.fragment_shader(fragmentShader.main_entry_point(), ())
+				.depth_stencil_simple_depth()
 				.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
 				.build(logicalDevice.clone()).unwrap()
 		);
 	}
 
-	fn createSwapchainFramebuffers(swapchainImages: &[Arc<SwapchainImage<Window>>], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+	fn createSwapchainFramebuffers(swapchainImages: &[Arc<SwapchainImage<Window>>], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>, depthBuffer: &Arc<AttachmentImage>) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
 		return swapchainImages.iter().map(|image| {
-			let framebuffer: Arc<dyn FramebufferAbstract + Send + Sync> = Arc::new(Framebuffer::start(renderPass.clone()).add(image.clone()).unwrap().build().unwrap());
-			return framebuffer;
+			return Arc::new(Framebuffer::start(renderPass.clone())
+				.add(image.clone()).unwrap()
+				.add(depthBuffer.clone()).unwrap()
+				.build().unwrap()
+			) as Arc<dyn FramebufferAbstract + Send + Sync>;
 		}).collect();
 	}
 
