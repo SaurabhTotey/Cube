@@ -19,10 +19,11 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::HashSet;
 use winit::dpi::LogicalSize;
-use cgmath::Matrix4;
+use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::pipeline_layout::PipelineLayoutDesc;
 use vulkano::descriptor::PipelineLayoutAbstract;
+use std::time::Instant;
 
 #[derive(Default, Copy, Clone)]
 struct Vertex {
@@ -36,6 +37,11 @@ struct ModelViewProjectionTransformation {
 	modelTransformation: Matrix4<f32>,
 	viewTransformation: Matrix4<f32>,
 	projectionTransformation: Matrix4<f32>
+}
+impl Default for ModelViewProjectionTransformation {
+	fn default() -> Self {
+		ModelViewProjectionTransformation { modelTransformation: Matrix4::identity(), viewTransformation: Matrix4::identity(), projectionTransformation: Matrix4::identity() }
+	}
 }
 
 struct Application {
@@ -53,9 +59,11 @@ struct Application {
 	vertexBuffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: Arc<FixedSizeDescriptorSetsPool>,
+	uniformBuffers: Vec<Arc<CpuAccessibleBuffer<ModelViewProjectionTransformation>>>,
 	commandBuffers: Vec<Arc<AutoCommandBuffer>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
-	shouldRecreateSwapchain: bool
+	shouldRecreateSwapchain: bool,
+	startTime: Instant
 }
 
 impl Application {
@@ -125,6 +133,7 @@ impl Application {
 
 		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
 		let descriptorSetsPool = Arc::new(FixedSizeDescriptorSetsPool::new(layout.clone()));
+		let uniformBuffers = Self::createUniformBuffers(swapchainFramebuffers.len(), &logicalDevice);
 
 		let commandBuffers = Self::createCommandBuffers(&graphicsQueue, &swapchainFramebuffers, &logicalDevice, &graphicsPipeline, &vertexBuffer, &indexBuffer);
 
@@ -145,9 +154,11 @@ impl Application {
 			vertexBuffer,
 			indexBuffer,
 			descriptorSetsPool,
+			uniformBuffers,
 			commandBuffers,
 			previousFrameEnd,
-			shouldRecreateSwapchain: false
+			shouldRecreateSwapchain: false,
+			startTime: Instant::now()
 		}, eventsLoop)
 	}
 
@@ -167,6 +178,7 @@ impl Application {
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
 						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
 						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass);
+						self.uniformBuffers = Self::createUniformBuffers(self.swapchainFramebuffers.len(), &self.logicalDevice);
 						self.commandBuffers = Self::createCommandBuffers(&self.graphicsQueue, &self.swapchainFramebuffers, &self.logicalDevice, &self.graphicsPipeline, &self.vertexBuffer, &self.indexBuffer);
 						self.shouldRecreateSwapchain = false;
 					}
@@ -181,6 +193,21 @@ impl Application {
 					if isSuboptimal {
 						self.shouldRecreateSwapchain = true;
 					}
+
+					let timePassed = Instant::now() - self.startTime;
+					let transformation = ModelViewProjectionTransformation {
+						modelTransformation: Matrix4::from_angle_z(Rad::from(Deg(timePassed.as_secs_f32() * 0.18))),
+						viewTransformation: Matrix4::look_at(Point3::new(2f32, 2f32, 2f32), Point3::new(0f32, 0f32, 0f32), Vector3::new(0f32, 0f32, 1f32)),
+						projectionTransformation: cgmath::perspective(Rad::from(Deg(45f32)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10f32)
+					};
+					self.uniformBuffers[imageIndex] = CpuAccessibleBuffer::from_data(
+						self.logicalDevice.clone(),
+						BufferUsage::uniform_buffer_transfer_destination(),
+						false,
+						transformation
+					).unwrap();
+					let set = self.descriptorSetsPool.next().add_buffer(self.uniformBuffers[imageIndex].clone()).unwrap().build().unwrap();
+
 					let commandBuffer = self.commandBuffers[imageIndex].clone();
 
 					let future = self.previousFrameEnd
@@ -314,6 +341,17 @@ impl Application {
 				.end_render_pass().unwrap();
 			return Arc::new(builder.build().unwrap());
 		}).collect();
+	}
+
+	fn createUniformBuffers(numberOfBuffers: usize, logicalDevice: &Arc<Device>) -> Vec<Arc<CpuAccessibleBuffer<ModelViewProjectionTransformation>>> {
+		return (0 .. numberOfBuffers).map(|i|
+			CpuAccessibleBuffer::from_data(
+				logicalDevice.clone(),
+				BufferUsage::uniform_buffer_transfer_destination(),
+				false,
+				ModelViewProjectionTransformation::default()
+			).unwrap()
+		).collect();
 	}
 
 }
