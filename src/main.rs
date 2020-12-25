@@ -19,10 +19,11 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::HashSet;
 use winit::dpi::LogicalSize;
-use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
+use cgmath::{Matrix4, Rad, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::time::Instant;
+use std::f32::consts::PI;
 
 mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
@@ -36,12 +37,19 @@ vulkano::impl_vertex!(Vertex, position, color);
 
 #[derive(Copy, Clone)]
 struct CameraTransformation {
-	viewTransformation: Matrix4<f32>,
-	projectionTransformation: Matrix4<f32>
+	position: Point3<f32>,
+	direction: Vector3<f32>
 }
-impl Default for CameraTransformation {
-	fn default() -> Self {
-		CameraTransformation { viewTransformation: Matrix4::identity(), projectionTransformation: Matrix4::identity() }
+impl CameraTransformation {
+	fn new() -> Self {
+		CameraTransformation { position: Point3::new(2.0, 2.0, 2.0), direction: Vector3::new(-2.0, -2.0, -2.0) }
+	}
+
+	fn getTransformation(&self, aspectRatio: f32) -> Matrix4<f32> {
+		let viewTransformation = Matrix4::look_at_dir(self.position, self.direction, Vector3::unit_z());
+		let mut projectionTransformation = cgmath::perspective(Rad(PI / 4.0), aspectRatio, 0.001, 100.0);
+		projectionTransformation.y *= -1.0;
+		return projectionTransformation * viewTransformation;
 	}
 }
 
@@ -61,10 +69,11 @@ struct Application {
 	vertexBuffer: Arc<ImmutableBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
-	uniformBufferPool: CpuBufferPool<CameraTransformation>,
+	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
-	startTime: Instant
+	startTime: Instant,
+	cameraTransformation: CameraTransformation
 }
 
 impl Application {
@@ -146,7 +155,7 @@ impl Application {
 
 		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
 		let descriptorSetsPool = FixedSizeDescriptorSetsPool::new(layout.clone());
-		let uniformBufferPool = CpuBufferPool::<CameraTransformation>::uniform_buffer(logicalDevice.clone());
+		let uniformBufferPool = CpuBufferPool::<Matrix4<f32>>::uniform_buffer(logicalDevice.clone());
 
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
@@ -169,7 +178,8 @@ impl Application {
 			uniformBufferPool,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
-			startTime: Instant::now()
+			startTime: Instant::now(),
+			cameraTransformation: CameraTransformation::new()
 		}, eventsLoop)
 	}
 
@@ -204,12 +214,7 @@ impl Application {
 						self.shouldRecreateSwapchain = true;
 					}
 
-					let mut transformation = CameraTransformation {
-						viewTransformation: Matrix4::look_at(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
-						projectionTransformation: cgmath::perspective(Rad::from(Deg(45.0)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10.0)
-					};
-					transformation.projectionTransformation.y *= -1.0;
-					let uniformBuffer = self.uniformBufferPool.next(transformation).unwrap();
+					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
 					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
 
 					let timePassed = Instant::now() - self.startTime;
