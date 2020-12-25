@@ -23,6 +23,9 @@ use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 
+mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
+mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
+
 #[derive(Default, Copy, Clone)]
 struct Vertex {
 	position: [f32; 3],
@@ -206,10 +209,12 @@ impl Application {
 					let uniformBuffer = self.uniformBufferPool.next(transformation).unwrap();
 					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
 
+					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::identity().into() };
+
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet, ()).unwrap()
+						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet, pushConstants).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
@@ -311,8 +316,6 @@ impl Application {
 	}
 
 	fn createGraphicsPipeline(logicalDevice: &Arc<Device>, swapchainExtent: [u32; 2], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-		mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
-		mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
 		let vertexShader = VertexShader::Shader::load(logicalDevice.clone()).unwrap();
 		let fragmentShader = FragmentShader::Shader::load(logicalDevice.clone()).unwrap();
 
