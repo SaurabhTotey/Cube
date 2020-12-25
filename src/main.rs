@@ -31,14 +31,13 @@ struct Vertex {
 vulkano::impl_vertex!(Vertex, position, color);
 
 #[derive(Copy, Clone)]
-struct ModelViewProjectionTransformation {
-	modelTransformation: Matrix4<f32>,
+struct CameraTransformation {
 	viewTransformation: Matrix4<f32>,
 	projectionTransformation: Matrix4<f32>
 }
-impl Default for ModelViewProjectionTransformation {
+impl Default for CameraTransformation {
 	fn default() -> Self {
-		ModelViewProjectionTransformation { modelTransformation: Matrix4::identity(), viewTransformation: Matrix4::identity(), projectionTransformation: Matrix4::identity() }
+		CameraTransformation { viewTransformation: Matrix4::identity(), projectionTransformation: Matrix4::identity() }
 	}
 }
 
@@ -58,7 +57,7 @@ struct Application {
 	vertexBuffer: Arc<ImmutableBuffer<[Vertex]>>,
 	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
-	uniformBufferPool: CpuBufferPool<ModelViewProjectionTransformation>,
+	uniformBufferPool: CpuBufferPool<CameraTransformation>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
 }
@@ -142,7 +141,7 @@ impl Application {
 
 		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
 		let descriptorSetsPool = FixedSizeDescriptorSetsPool::new(layout.clone());
-		let uniformBufferPool = CpuBufferPool::<ModelViewProjectionTransformation>::uniform_buffer(logicalDevice.clone());
+		let uniformBufferPool = CpuBufferPool::<CameraTransformation>::uniform_buffer(logicalDevice.clone());
 
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
@@ -199,8 +198,7 @@ impl Application {
 						self.shouldRecreateSwapchain = true;
 					}
 
-					let mut transformation = ModelViewProjectionTransformation {
-						modelTransformation: Matrix4::identity(),
+					let mut transformation = CameraTransformation {
 						viewTransformation: Matrix4::look_at(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
 						projectionTransformation: cgmath::perspective(Rad::from(Deg(45.0)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10.0)
 					};
