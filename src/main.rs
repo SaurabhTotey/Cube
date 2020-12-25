@@ -122,7 +122,7 @@ impl Application {
 		let renderPass = Self::createRenderPass(&logicalDevice, swapchain.format());
 		let graphicsPipeline = Self::createGraphicsPipeline(&logicalDevice, swapchain.dimensions(), &renderPass);
 
-		let depthBuffer = AttachmentImage::transient(logicalDevice.clone(), swapchain.dimensions(), Format::D16Unorm).unwrap();
+		let depthBuffer = AttachmentImage::transient(logicalDevice.clone(), swapchain.dimensions(), Format::D32Sfloat).unwrap();
 		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass, &depthBuffer);
 
 		let vertices = [
@@ -219,7 +219,7 @@ impl Application {
 						self.swapchainImages = newSwapchainImages;
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
 						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
-						self.depthBuffer = AttachmentImage::transient(self.logicalDevice.clone(), self.swapchain.dimensions(), Format::D16Unorm).unwrap();
+						self.depthBuffer = AttachmentImage::transient(self.logicalDevice.clone(), self.swapchain.dimensions(), Format::D32Sfloat).unwrap();
 						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass, &self.depthBuffer);
 						self.shouldRecreateSwapchain = false;
 					}
@@ -333,7 +333,7 @@ impl Application {
 					depth: {
 						load: Clear,
 						store: DontCare,
-						format: Format::D16Unorm,
+						format: Format::D32Sfloat,
 						samples: 1,
 					}
 				},
