@@ -22,7 +22,6 @@ use winit::dpi::LogicalSize;
 use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
-use std::time::Instant;
 
 #[derive(Default, Copy, Clone)]
 struct Vertex {
@@ -62,7 +61,6 @@ struct Application {
 	uniformBufferPool: CpuBufferPool<ModelViewProjectionTransformation>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
-	startTime: Instant
 }
 
 impl Application {
@@ -167,7 +165,6 @@ impl Application {
 			uniformBufferPool,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
-			startTime: Instant::now()
 		}, eventsLoop)
 	}
 
@@ -202,9 +199,8 @@ impl Application {
 						self.shouldRecreateSwapchain = true;
 					}
 
-					let timePassed = Instant::now() - self.startTime;
 					let mut transformation = ModelViewProjectionTransformation {
-						modelTransformation: Matrix4::from_angle_z(Rad(-timePassed.as_secs_f32())),
+						modelTransformation: Matrix4::identity(),
 						viewTransformation: Matrix4::look_at(Point3::new(2.0, 2.0, 2.0), Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
 						projectionTransformation: cgmath::perspective(Rad::from(Deg(45.0)), self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32, 0.1, 10.0)
 					};
