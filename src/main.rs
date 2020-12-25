@@ -22,6 +22,7 @@ use winit::dpi::LogicalSize;
 use cgmath::{Matrix4, SquareMatrix, Rad, Deg, Point3, Vector3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
+use std::time::Instant;
 
 mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
@@ -63,6 +64,7 @@ struct Application {
 	uniformBufferPool: CpuBufferPool<CameraTransformation>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
+	startTime: Instant
 }
 
 impl Application {
@@ -167,6 +169,7 @@ impl Application {
 			uniformBufferPool,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
+			startTime: Instant::now()
 		}, eventsLoop)
 	}
 
@@ -209,7 +212,8 @@ impl Application {
 					let uniformBuffer = self.uniformBufferPool.next(transformation).unwrap();
 					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
 
-					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::identity().into() };
+					let timePassed = Instant::now() - self.startTime;
+					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad(-timePassed.as_secs_f32())).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
