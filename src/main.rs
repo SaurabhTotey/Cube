@@ -24,6 +24,7 @@ use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::time::Instant;
 use std::f32::consts::PI;
+use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 
 mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
@@ -38,15 +39,15 @@ vulkano::impl_vertex!(Vertex, position, color);
 #[derive(Copy, Clone)]
 struct CameraTransformation {
 	position: Point3<f32>,
-	direction: Vector3<f32>
+	forwardDirection: Vector3<f32>
 }
 impl CameraTransformation {
 	fn new() -> Self {
-		CameraTransformation { position: Point3::new(2.0, 2.0, 2.0), direction: Vector3::new(-2.0, -2.0, -2.0) }
+		CameraTransformation { position: Point3::new(2.0, 2.0, 2.0), forwardDirection: Vector3::new(-2.0, -2.0, -2.0) }
 	}
 
 	fn getTransformation(&self, aspectRatio: f32) -> Matrix4<f32> {
-		let viewTransformation = Matrix4::look_at_dir(self.position, self.direction, Vector3::unit_z());
+		let viewTransformation = Matrix4::look_at_dir(self.position, self.forwardDirection, Vector3::unit_z());
 		let mut projectionTransformation = cgmath::perspective(Rad(PI / 4.0), aspectRatio, 0.001, 100.0);
 		projectionTransformation.y *= -1.0;
 		return projectionTransformation * viewTransformation;
@@ -187,7 +188,27 @@ impl Application {
 		eventsLoop.run(move |event, _, controlFlow| {
 			match event {
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::CloseRequested, .. } => { *controlFlow = ControlFlow::Exit },
-				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::Resized(_), .. } => { self.shouldRecreateSwapchain = true; }
+				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::Resized(_), .. } => { self.shouldRecreateSwapchain = true; },
+				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(keycode), state: ElementState::Pressed, .. }, .. }, .. } => {
+					if keycode == VirtualKeyCode::W {
+						self.cameraTransformation.position += 0.1 * self.cameraTransformation.forwardDirection;
+					}
+					if keycode == VirtualKeyCode::S {
+						self.cameraTransformation.position -= 0.1 * self.cameraTransformation.forwardDirection;
+					}
+					if keycode == VirtualKeyCode::A {
+						println!("TODO: move left");
+					}
+					if keycode == VirtualKeyCode::D {
+						println!("TODO: move right");
+					}
+					if keycode == VirtualKeyCode::Space {
+						println!("TODO: move up");
+					}
+					if keycode == VirtualKeyCode::LShift {
+						println!("TODO: move down");
+					}
+				},
 				winit::event::Event::RedrawEventsCleared => {
 					self.previousFrameEnd.as_mut().unwrap().cleanup_finished();
 
