@@ -18,8 +18,8 @@ use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
-use winit::dpi::LogicalSize;
-use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix};
+use winit::dpi::{LogicalSize, PhysicalPosition};
+use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix, Vector4};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::f32::consts::PI;
@@ -51,6 +51,22 @@ impl CameraTransformation {
 			rightDirection: Vector3::new(0.0, -1.0, 0.0),
 			upDirection: Vector3::new(0.0, 0.0, 1.0)
 		}
+	}
+
+	// TODO: this doesn't feel right or good
+	fn rotated(&self, yaw: &f32, pitch: &f32) -> Self {
+		let yawTransformation = Matrix4::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
+		let pitchTransformation = Matrix4::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
+		let combinedTransformation = pitchTransformation * yawTransformation;
+		let newBackwardsDirection = combinedTransformation * Vector4::new(self.backwardsDirection.x, self.backwardsDirection.y, self.backwardsDirection.z, 1.0);
+		let newRightDirection = combinedTransformation * Vector4::new(self.rightDirection.x, self.rightDirection.y, self.rightDirection.z, 1.0);
+		let newUpDirection = combinedTransformation * Vector4::new(self.upDirection.x, self.upDirection.y, self.upDirection.z, 1.0);
+		return CameraTransformation {
+			position: self.position,
+			backwardsDirection: Vector3::new(newBackwardsDirection.x, newBackwardsDirection.y, newBackwardsDirection.z),
+			rightDirection: Vector3::new(newRightDirection.x, newRightDirection.y, newRightDirection.z),
+			upDirection: Vector3::new(newUpDirection.x, newUpDirection.y, newUpDirection.z)
+		};
 	}
 
 	fn getTransformation(&self, aspectRatio: f32) -> Matrix4<f32> {
@@ -173,6 +189,9 @@ impl Application {
 			keyToIsPressed.insert(*keyCode, false);
 		});
 
+		surface.window().set_cursor_grab(true).unwrap_or(());
+		surface.window().set_cursor_visible(false);
+
 		return (Self {
 			instance,
 			physicalDeviceIndex,
@@ -207,6 +226,15 @@ impl Application {
 					if self.keyToIsPressed.contains_key(&keycode) {
 						self.keyToIsPressed.insert(keycode, pressedState == ElementState::Pressed);
 					}
+					if keycode == VirtualKeyCode::Escape {
+						*controlFlow = ControlFlow::Exit;
+					}
+				},
+				winit::event::Event::DeviceEvent { event: winit::event::DeviceEvent::MouseMotion { delta }, .. } => {
+					let sensitivity = 0.01;
+					self.cameraTransformation = self.cameraTransformation.rotated(&(delta.0 as f32 * sensitivity), &(delta.1 as f32 * sensitivity));
+					let midpoint = [self.swapchain.dimensions()[0] / 2, self.swapchain.dimensions()[1] / 2];
+					self.surface.window().set_cursor_position(PhysicalPosition { x: midpoint[0], y: midpoint[1] }).unwrap_or(());
 				},
 				winit::event::Event::RedrawEventsCleared => {
 					self.previousFrameEnd.as_mut().unwrap().cleanup_finished();
