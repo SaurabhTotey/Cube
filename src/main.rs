@@ -24,6 +24,7 @@ use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
+use std::time::Instant;
 
 mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
 mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
@@ -79,7 +80,8 @@ struct Application {
 	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
-	cameraTransformation: CameraTransformation
+	cameraTransformation: CameraTransformation,
+	previousFrameEndInstant: Instant
 }
 
 impl Application {
@@ -184,7 +186,8 @@ impl Application {
 			uniformBufferPool,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
-			cameraTransformation: CameraTransformation::new()
+			cameraTransformation: CameraTransformation::new(),
+			previousFrameEndInstant: Instant::now()
 		}, eventsLoop)
 	}
 
@@ -194,23 +197,28 @@ impl Application {
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::CloseRequested, .. } => { *controlFlow = ControlFlow::Exit },
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::Resized(_), .. } => { self.shouldRecreateSwapchain = true; },
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(keycode), state: ElementState::Pressed, .. }, .. }, .. } => {
+					let deltaTime = Instant::now() - self.previousFrameEndInstant;
+					let speed = 200.0;
+					let directionMultiplier = deltaTime.as_secs_f32() * speed;
+
+					//TODO: don't use events to check whether they are pressed; instead, keep track of keyboard state
 					if keycode == VirtualKeyCode::W {
-						self.cameraTransformation.position -= 0.1 * self.cameraTransformation.backwardsDirection;
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.backwardsDirection;
 					}
 					if keycode == VirtualKeyCode::S {
-						self.cameraTransformation.position += 0.1 * self.cameraTransformation.backwardsDirection;
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.backwardsDirection;
 					}
 					if keycode == VirtualKeyCode::A {
-						self.cameraTransformation.position -= 0.1 * self.cameraTransformation.rightDirection;
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.rightDirection;
 					}
 					if keycode == VirtualKeyCode::D {
-						self.cameraTransformation.position += 0.1 * self.cameraTransformation.rightDirection;
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.rightDirection;
 					}
 					if keycode == VirtualKeyCode::Space {
-						self.cameraTransformation.position += 0.1 * self.cameraTransformation.upDirection;
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.upDirection;
 					}
 					if keycode == VirtualKeyCode::LShift {
-						self.cameraTransformation.position -= 0.1 * self.cameraTransformation.upDirection;
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.upDirection;
 					}
 				},
 				winit::event::Event::RedrawEventsCleared => {
@@ -267,6 +275,7 @@ impl Application {
 				},
 				_ => ()
 			}
+			self.previousFrameEndInstant = Instant::now();
 		});
 	}
 
