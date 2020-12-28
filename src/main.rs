@@ -19,7 +19,7 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix, Vector4};
+use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix, Matrix3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::f32::consts::PI;
@@ -55,17 +55,14 @@ impl CameraTransformation {
 
 	// TODO: this doesn't feel right or good
 	fn rotated(&self, yaw: &f32, pitch: &f32) -> Self {
-		let yawTransformation = Matrix4::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
-		let pitchTransformation = Matrix4::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
-		let combinedTransformation = pitchTransformation * yawTransformation;
-		let newBackwardsDirection = combinedTransformation * Vector4::new(self.backwardsDirection.x, self.backwardsDirection.y, self.backwardsDirection.z, 1.0);
-		let newRightDirection = combinedTransformation * Vector4::new(self.rightDirection.x, self.rightDirection.y, self.rightDirection.z, 1.0);
-		let newUpDirection = combinedTransformation * Vector4::new(self.upDirection.x, self.upDirection.y, self.upDirection.z, 1.0);
+		let yawTransformation = Matrix3::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
+		let pitchTransformation = Matrix3::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
+		let combinedTransformation = yawTransformation * pitchTransformation;
 		return CameraTransformation {
 			position: self.position,
-			backwardsDirection: Vector3::new(newBackwardsDirection.x, newBackwardsDirection.y, newBackwardsDirection.z),
-			rightDirection: Vector3::new(newRightDirection.x, newRightDirection.y, newRightDirection.z),
-			upDirection: Vector3::new(newUpDirection.x, newUpDirection.y, newUpDirection.z)
+			backwardsDirection: combinedTransformation * self.backwardsDirection,
+			rightDirection: combinedTransformation * self.rightDirection,
+			upDirection: combinedTransformation * self.upDirection
 		};
 	}
 
