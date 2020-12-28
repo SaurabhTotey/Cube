@@ -17,7 +17,7 @@ use vulkano::framebuffer::{Subpass, Framebuffer, RenderPassAbstract, Framebuffer
 use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use winit::dpi::LogicalSize;
 use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
@@ -81,7 +81,8 @@ struct Application {
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
 	cameraTransformation: CameraTransformation,
-	previousFrameEndInstant: Instant
+	previousFrameEndInstant: Instant,
+	keyToIsPressed: HashMap<VirtualKeyCode, bool>
 }
 
 impl Application {
@@ -167,6 +168,11 @@ impl Application {
 
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
+		let mut keyToIsPressed = HashMap::new();
+		[VirtualKeyCode::W, VirtualKeyCode::A, VirtualKeyCode::S, VirtualKeyCode::D, VirtualKeyCode::Space, VirtualKeyCode::LShift].iter().for_each(|keyCode| {
+			keyToIsPressed.insert(*keyCode, false);
+		});
+
 		return (Self {
 			instance,
 			physicalDeviceIndex,
@@ -187,7 +193,8 @@ impl Application {
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
 			cameraTransformation: CameraTransformation::new(),
-			previousFrameEndInstant: Instant::now()
+			previousFrameEndInstant: Instant::now(),
+			keyToIsPressed
 		}, eventsLoop)
 	}
 
@@ -196,29 +203,9 @@ impl Application {
 			match event {
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::CloseRequested, .. } => { *controlFlow = ControlFlow::Exit },
 				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::Resized(_), .. } => { self.shouldRecreateSwapchain = true; },
-				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(keycode), state: ElementState::Pressed, .. }, .. }, .. } => {
-					let deltaTime = Instant::now() - self.previousFrameEndInstant;
-					let speed = 200.0;
-					let directionMultiplier = deltaTime.as_secs_f32() * speed;
-
-					//TODO: don't use events to check whether they are pressed; instead, keep track of keyboard state
-					if keycode == VirtualKeyCode::W {
-						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.backwardsDirection;
-					}
-					if keycode == VirtualKeyCode::S {
-						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.backwardsDirection;
-					}
-					if keycode == VirtualKeyCode::A {
-						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.rightDirection;
-					}
-					if keycode == VirtualKeyCode::D {
-						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.rightDirection;
-					}
-					if keycode == VirtualKeyCode::Space {
-						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.upDirection;
-					}
-					if keycode == VirtualKeyCode::LShift {
-						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.upDirection;
+				winit::event::Event::WindowEvent { event: winit::event::WindowEvent::KeyboardInput { input: KeyboardInput { virtual_keycode: Some(keycode), state: pressedState, .. }, .. }, .. } => {
+					if self.keyToIsPressed.contains_key(&keycode) {
+						self.keyToIsPressed.insert(keycode, pressedState == ElementState::Pressed);
 					}
 				},
 				winit::event::Event::RedrawEventsCleared => {
@@ -245,6 +232,28 @@ impl Application {
 					};
 					if isSuboptimal {
 						self.shouldRecreateSwapchain = true;
+					}
+
+					let deltaTime = Instant::now() - self.previousFrameEndInstant;
+					let speed = 20.0;
+					let directionMultiplier = deltaTime.as_secs_f32() * speed;
+					if *self.keyToIsPressed.get(&VirtualKeyCode::W).unwrap() {
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.backwardsDirection;
+					}
+					if *self.keyToIsPressed.get(&VirtualKeyCode::A).unwrap() {
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.rightDirection;
+					}
+					if *self.keyToIsPressed.get(&VirtualKeyCode::S).unwrap() {
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.backwardsDirection;
+					}
+					if *self.keyToIsPressed.get(&VirtualKeyCode::D).unwrap() {
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.rightDirection;
+					}
+					if *self.keyToIsPressed.get(&VirtualKeyCode::Space).unwrap() {
+						self.cameraTransformation.position += directionMultiplier * self.cameraTransformation.upDirection;
+					}
+					if *self.keyToIsPressed.get(&VirtualKeyCode::LShift).unwrap() {
+						self.cameraTransformation.position -= directionMultiplier * self.cameraTransformation.upDirection;
 					}
 
 					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
