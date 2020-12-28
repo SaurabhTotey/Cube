@@ -19,10 +19,9 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::HashSet;
 use winit::dpi::LogicalSize;
-use cgmath::{Matrix4, Rad, Point3, Vector3};
+use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
-use std::time::Instant;
 use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 
@@ -73,7 +72,6 @@ struct Application {
 	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
-	startTime: Instant,
 	cameraTransformation: CameraTransformation
 }
 
@@ -179,7 +177,6 @@ impl Application {
 			uniformBufferPool,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
-			startTime: Instant::now(),
 			cameraTransformation: CameraTransformation::new()
 		}, eventsLoop)
 	}
@@ -238,8 +235,7 @@ impl Application {
 					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
 					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
 
-					let timePassed = Instant::now() - self.startTime;
-					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad(-timePassed.as_secs_f32())).into() };
+					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::identity().into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
