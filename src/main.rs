@@ -53,14 +53,16 @@ impl CameraTransformation {
 		}
 	}
 
+	// TODO: somehow some roll happens when spinning the mouse
 	fn rotated(&self, yaw: &f32, pitch: &f32) -> Self {
 		let pitchTransformation = Matrix3::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
 		let yawTransformation = Matrix3::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
+		let combinedTransformation = pitchTransformation * yawTransformation;
 		return CameraTransformation {
 			position: self.position,
-			backwardsDirection: pitchTransformation * yawTransformation * self.backwardsDirection,
-			rightDirection: yawTransformation * self.rightDirection,
-			upDirection: pitchTransformation * self.upDirection
+			backwardsDirection: combinedTransformation * self.backwardsDirection,
+			rightDirection: combinedTransformation * self.rightDirection,
+			upDirection: combinedTransformation * self.upDirection
 		};
 	}
 
