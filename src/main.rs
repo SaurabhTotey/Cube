@@ -53,16 +53,16 @@ impl CameraTransformation {
 		}
 	}
 
-	// TODO: this doesn't feel right or good
 	fn rotated(&self, yaw: &f32, pitch: &f32) -> Self {
-		let yawTransformation = Matrix3::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
 		let pitchTransformation = Matrix3::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
+		let newUpDirection = pitchTransformation * self.upDirection;
+		let yawTransformation = Matrix3::<f32>::from_axis_angle(newUpDirection, Rad(-*yaw));
 		let combinedTransformation = yawTransformation * pitchTransformation;
 		return CameraTransformation {
 			position: self.position,
 			backwardsDirection: combinedTransformation * self.backwardsDirection,
-			rightDirection: combinedTransformation * self.rightDirection,
-			upDirection: combinedTransformation * self.upDirection
+			rightDirection: yawTransformation * self.rightDirection,
+			upDirection: newUpDirection
 		};
 	}
 
