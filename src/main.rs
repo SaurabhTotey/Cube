@@ -19,7 +19,7 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use cgmath::{Matrix4, Rad, Point3, Vector3, SquareMatrix, Matrix3};
+use cgmath::{Matrix4, Rad, Point3, Vector3, Matrix3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
 use std::f32::consts::PI;
@@ -95,6 +95,7 @@ struct Application {
 	shouldRecreateSwapchain: bool,
 	cameraTransformation: CameraTransformation,
 	previousFrameEndInstant: Instant,
+	startTime: Instant,
 	keyToIsPressed: HashMap<VirtualKeyCode, bool>
 }
 
@@ -210,6 +211,7 @@ impl Application {
 			shouldRecreateSwapchain: false,
 			cameraTransformation: CameraTransformation::new(),
 			previousFrameEndInstant: Instant::now(),
+			startTime: Instant::now(),
 			keyToIsPressed
 		}, eventsLoop)
 	}
@@ -282,14 +284,16 @@ impl Application {
 					}
 
 					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
-					let descriptorSet = self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap();
+					let descriptorSet = Arc::new(self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap());
 
-					let pushConstants = VertexShader::ty::ModelTransformation { transformation: Matrix4::identity().into() };
+					let pushConstantsCubeOne = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
+					let pushConstantsCubeTwo = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet, pushConstants).unwrap()
+						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
+						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
