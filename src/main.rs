@@ -3,7 +3,7 @@
 use vulkano::instance::{Instance, ApplicationInfo, PhysicalDevice};
 use std::borrow::Cow;
 use winit::event_loop::{EventLoop, ControlFlow};
-use winit::window::{WindowBuilder, Window};
+use winit::window::{WindowBuilder, Window, Fullscreen};
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions, Queue};
 use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, Capabilities, Surface, acquire_next_image};
@@ -18,7 +18,6 @@ use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
-use winit::dpi::{LogicalSize, PhysicalPosition};
 use cgmath::{Matrix4, Rad, Point3, Vector3, Matrix3};
 use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
 use vulkano::descriptor::PipelineLayoutAbstract;
@@ -113,8 +112,10 @@ impl Application {
 		let eventsLoop = EventLoop::new();
 		let surface = WindowBuilder::new()
 			.with_title("Cube!")
-			.with_inner_size(LogicalSize { width: 800.0, height: 600.0 })
 			.build_vk_surface(&eventsLoop, instance.clone()).unwrap();
+		surface.window().set_cursor_grab(true).unwrap_or(());
+		surface.window().set_cursor_visible(false);
+		surface.window().set_fullscreen(Some(Fullscreen::Borderless(surface.window().current_monitor())));
 
 		let getSurfaceCapabilities = |physicalDevice: &PhysicalDevice| surface.capabilities(*physicalDevice).unwrap();
 		let getGraphicsFamilyIndex = |physicalDevice: &PhysicalDevice| physicalDevice.queue_families().position(|family| family.supports_graphics());
@@ -186,9 +187,6 @@ impl Application {
 			keyToIsPressed.insert(*keyCode, false);
 		});
 
-		surface.window().set_cursor_grab(true).unwrap_or(());
-		surface.window().set_cursor_visible(false);
-
 		return (Self {
 			instance,
 			physicalDeviceIndex,
@@ -229,10 +227,8 @@ impl Application {
 					}
 				},
 				winit::event::Event::DeviceEvent { event: winit::event::DeviceEvent::MouseMotion { delta }, .. } => {
-					let sensitivity = 0.01;
+					let sensitivity = 0.005;
 					self.cameraTransformation = self.cameraTransformation.rotated(&(delta.0 as f32 * sensitivity), &(delta.1 as f32 * sensitivity));
-					let midpoint = [self.swapchain.dimensions()[0] / 2, self.swapchain.dimensions()[1] / 2];
-					self.surface.window().set_cursor_position(PhysicalPosition { x: midpoint[0], y: midpoint[1] }).unwrap_or(());
 				},
 				winit::event::Event::RedrawEventsCleared => {
 					self.previousFrameEnd.as_mut().unwrap().cleanup_finished();
