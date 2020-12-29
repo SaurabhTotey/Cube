@@ -55,19 +55,17 @@ impl CameraTransformation {
 
 	fn rotated(&self, yaw: &f32, pitch: &f32) -> Self {
 		let pitchTransformation = Matrix3::<f32>::from_axis_angle(self.rightDirection, Rad(-*pitch));
-		let newUpDirection = pitchTransformation * self.upDirection;
-		let yawTransformation = Matrix3::<f32>::from_axis_angle(newUpDirection, Rad(-*yaw));
-		let combinedTransformation = yawTransformation * pitchTransformation;
+		let yawTransformation = Matrix3::<f32>::from_axis_angle(self.upDirection, Rad(-*yaw));
 		return CameraTransformation {
 			position: self.position,
-			backwardsDirection: combinedTransformation * self.backwardsDirection,
+			backwardsDirection: pitchTransformation * yawTransformation * self.backwardsDirection,
 			rightDirection: yawTransformation * self.rightDirection,
-			upDirection: newUpDirection
+			upDirection: pitchTransformation * self.upDirection
 		};
 	}
 
 	fn getTransformation(&self, aspectRatio: f32) -> Matrix4<f32> {
-		let viewTransformation = Matrix4::look_at_dir(self.position, -self.backwardsDirection, Vector3::unit_z());
+		let viewTransformation = Matrix4::look_at_dir(self.position, -self.backwardsDirection, self.upDirection);
 		let mut projectionTransformation = cgmath::perspective(Rad(PI / 4.0), aspectRatio, 0.001, 100.0);
 		projectionTransformation.y *= -1.0;
 		return projectionTransformation * viewTransformation;
