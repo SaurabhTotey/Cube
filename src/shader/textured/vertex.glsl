@@ -9,10 +9,11 @@ layout(push_constant) uniform ModelTransformation {
 } model;
 
 layout(location = 0) in vec3 position;
-layout(location = 1) in vec4 color;
-layout(location = 0) out vec4 fragmentColor;
+layout(location = 1) in int faceId;
+layout(location = 2) in int cornerId;
+layout(location = 0) out vec2 textureCoordinates;
 
 void main() {
 	gl_Position = camera.transformation * model.transformation * vec4(position, 1.0);
-	fragmentColor = color;
+	textureCoordinates = vec2(0.0); // TODO: determine this based off of faceId and cornerId
 }
