@@ -24,7 +24,7 @@ use vulkano::descriptor::{PipelineLayoutAbstract, DescriptorSet};
 use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 use std::time::Instant;
-use vulkano::sampler::Sampler;
+use vulkano::sampler::{Sampler, Filter, MipmapMode, SamplerAddressMode};
 use std::io::Cursor;
 
 mod ColoredVertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/colored/vertex.glsl" } }
@@ -230,7 +230,19 @@ impl Application {
 			graphicsQueue.clone()
 		).unwrap();
 
-		let sampler = Sampler::simple_repeat_linear(logicalDevice.clone());
+		let sampler = Sampler::new(
+			logicalDevice.clone(),
+			Filter::Nearest,
+			Filter::Nearest,
+			MipmapMode::Nearest,
+			SamplerAddressMode::Repeat,
+			SamplerAddressMode::Repeat,
+			SamplerAddressMode::Repeat,
+			0.0,
+			1.0,
+			0.0,
+			0.0
+		).unwrap();
 		let textureDescriptorLayout = texturedGraphicsPipeline.descriptor_set_layout(1).unwrap();
 		let textureDescriptorSet = Arc::new(
 			PersistentDescriptorSet::start(textureDescriptorLayout.clone())
