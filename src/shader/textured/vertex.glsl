@@ -14,6 +14,7 @@ layout(location = 2) in int cornerId;
 layout(location = 0) out vec2 textureCoordinates;
 
 const int IMAGE_SIZE = 7;
+const vec2 IMAGE_DIMENSIONS = vec2(42.0, 7.0);
 
 void main() {
 	gl_Position = camera.transformation * model.transformation * vec4(position, 1.0);
@@ -28,5 +29,5 @@ void main() {
 		cornerOffset = vec2(float(IMAGE_SIZE));
 	}
 	vec2 faceOffset = vec2(float(faceId * IMAGE_SIZE), 0.0);
-	textureCoordinates = cornerOffset + faceOffset;
+	textureCoordinates = (cornerOffset + faceOffset) / IMAGE_DIMENSIONS;
 }
