@@ -193,10 +193,30 @@ impl Application {
 		).unwrap().0;
 
 		let texturedVertices = [
-			TexturedVertex { position: [-0.5,-0.5, 0.0], faceId: 0, cornerId: 0 },
-			TexturedVertex { position: [-0.5, 0.5, 0.0], faceId: 0, cornerId: 1 },
-			TexturedVertex { position: [ 0.5,-0.5, 0.0], faceId: 0, cornerId: 2 },
-			TexturedVertex { position: [ 0.5, 0.5, 0.0], faceId: 0, cornerId: 3 },
+			TexturedVertex { position: [-0.5,-0.5,-0.5], faceId: 0, cornerId: 0 },
+			TexturedVertex { position: [-0.5, 0.5,-0.5], faceId: 0, cornerId: 1 },
+			TexturedVertex { position: [ 0.5,-0.5,-0.5], faceId: 0, cornerId: 2 },
+			TexturedVertex { position: [ 0.5, 0.5,-0.5], faceId: 0, cornerId: 3 },
+			TexturedVertex { position: [-0.5,-0.5, 0.5], faceId: 1, cornerId: 0 },
+			TexturedVertex { position: [-0.5, 0.5, 0.5], faceId: 1, cornerId: 1 },
+			TexturedVertex { position: [ 0.5,-0.5, 0.5], faceId: 1, cornerId: 2 },
+			TexturedVertex { position: [ 0.5, 0.5, 0.5], faceId: 1, cornerId: 3 },
+			TexturedVertex { position: [-0.5,-0.5,-0.5], faceId: 2, cornerId: 0 },
+			TexturedVertex { position: [-0.5,-0.5, 0.5], faceId: 2, cornerId: 1 },
+			TexturedVertex { position: [-0.5, 0.5,-0.5], faceId: 2, cornerId: 2 },
+			TexturedVertex { position: [-0.5, 0.5, 0.5], faceId: 2, cornerId: 3 },
+			TexturedVertex { position: [ 0.5,-0.5,-0.5], faceId: 3, cornerId: 0 },
+			TexturedVertex { position: [ 0.5,-0.5, 0.5], faceId: 3, cornerId: 1 },
+			TexturedVertex { position: [ 0.5, 0.5,-0.5], faceId: 3, cornerId: 2 },
+			TexturedVertex { position: [ 0.5, 0.5, 0.5], faceId: 3, cornerId: 3 },
+			TexturedVertex { position: [-0.5,-0.5,-0.5], faceId: 4, cornerId: 0 },
+			TexturedVertex { position: [-0.5,-0.5, 0.5], faceId: 4, cornerId: 1 },
+			TexturedVertex { position: [ 0.5,-0.5,-0.5], faceId: 4, cornerId: 2 },
+			TexturedVertex { position: [ 0.5,-0.5, 0.5], faceId: 4, cornerId: 3 },
+			TexturedVertex { position: [-0.5, 0.5,-0.5], faceId: 5, cornerId: 0 },
+			TexturedVertex { position: [-0.5, 0.5, 0.5], faceId: 5, cornerId: 1 },
+			TexturedVertex { position: [ 0.5, 0.5,-0.5], faceId: 5, cornerId: 2 },
+			TexturedVertex { position: [ 0.5, 0.5, 0.5], faceId: 5, cornerId: 3 }
 		].to_vec();
 		let texturedVertexBuffer = ImmutableBuffer::from_iter(
 			texturedVertices.iter().cloned(),
@@ -204,7 +224,12 @@ impl Application {
 			graphicsQueue.clone()
 		).unwrap().0;
 		let texturedIndices = [
-			0u32, 1, 2, 3, 1, 2 // bottom face which should show the 1 face of the die
+			0u32,  1,  2,  3,  1,  2, // bottom face which should show the 1 face of the die
+			4   ,  5,  6,  7,  5,  6, // top face which should show the 2 face of the die
+			8   ,  9, 10, 11,  9, 10, // back face which should show the 3 face of the die
+			12  , 13, 14, 15, 13, 14, // front face which should show the 4 face of the die
+			16  , 17, 18, 19, 17, 18, // left face which should show the 5 face of the die
+			20  , 21, 22, 23, 21, 22  // right face which should show the 6 face of the die
 		];
 		let texturedIndexBuffer = ImmutableBuffer::from_iter(
 			texturedIndices.iter().cloned(),
@@ -359,11 +384,11 @@ impl Application {
 
 					let pushConstantsCubeOne = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
 					let pushConstantsCubeTwo = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
-					let pushConstantsCubeThree = TexturedVertexShader::ty::ModelTransformation{ transformation: Matrix4::from_translation(Vector3::new(3.0, 3.0, 3.0)).into() };
+					let pushConstantsCubeThree = TexturedVertexShader::ty::ModelTransformation{ transformation: Matrix4::from_translation(Vector3::new(-3.0, -3.0, -3.0)).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
-						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
+						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.2, 0.2, 0.2, 1.0].into(), 1f32.into()]).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
 						.draw_indexed(self.texturedGraphicsPipeline.clone(), &DynamicState::none(), vec![self.texturedVertexBuffer.clone()], self.texturedIndexBuffer.clone(), [descriptorSet.clone(), self.textureDescriptorSet.clone()].to_vec(), pushConstantsCubeThree).unwrap()
