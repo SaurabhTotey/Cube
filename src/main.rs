@@ -7,7 +7,7 @@ use winit::window::{WindowBuilder, Window, Fullscreen};
 use vulkano_win::VkSurfaceBuild;
 use vulkano::device::{Device, Features, DeviceExtensions, Queue};
 use vulkano::swapchain::{Swapchain, PresentMode, FullscreenExclusive, ColorSpace, CompositeAlpha, Capabilities, Surface, acquire_next_image};
-use vulkano::image::{ImageUsage, SwapchainImage, AttachmentImage};
+use vulkano::image::{ImageUsage, SwapchainImage, AttachmentImage, ImmutableImage, Dimensions};
 use vulkano::format::Format;
 use std::cmp::min;
 use vulkano::buffer::{BufferUsage, ImmutableBuffer, CpuBufferPool};
@@ -19,11 +19,13 @@ use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
 use cgmath::{Matrix4, Rad, Point3, Vector3, Matrix3};
-use vulkano::descriptor::descriptor_set::FixedSizeDescriptorSetsPool;
-use vulkano::descriptor::PipelineLayoutAbstract;
+use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, PersistentDescriptorSet};
+use vulkano::descriptor::{PipelineLayoutAbstract, DescriptorSet};
 use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 use std::time::Instant;
+use vulkano::sampler::Sampler;
+use std::io::Cursor;
 
 mod ColoredVertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/colored/vertex.glsl" } }
 mod ColoredFragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/colored/fragment.glsl" } }
@@ -102,6 +104,7 @@ struct Application {
 	texturedIndexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
 	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
+	textureDescriptorSet: Arc<dyn DescriptorSet + Send + Sync>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
 	shouldRecreateSwapchain: bool,
 	cameraTransformation: CameraTransformation,
@@ -213,6 +216,28 @@ impl Application {
 		let descriptorSetsPool = FixedSizeDescriptorSetsPool::new(layout.clone());
 		let uniformBufferPool = CpuBufferPool::<Matrix4<f32>>::uniform_buffer(logicalDevice.clone());
 
+		let imageBytes = include_bytes!("../assets/DieFaces.png").to_vec();
+		let cursor = Cursor::new(imageBytes);
+		let decoder = png::Decoder::new(cursor);
+		let (info, mut reader) = decoder.read_info().unwrap();
+		let mut imageData = Vec::new();
+		imageData.resize(7 * 7 * 6 * 4 as usize, 0); // each face is 7x7, there are 6 faces, and there are 4 color values
+		reader.next_frame(&mut imageData).unwrap();
+		let (texture, textureFuture) = ImmutableImage::from_iter(
+			imageData.iter().cloned(),
+			Dimensions::Dim2d { width: info.width, height: info.height },
+			Format::R8G8B8A8Srgb,
+			graphicsQueue.clone()
+		).unwrap();
+
+		let sampler = Sampler::simple_repeat_linear(logicalDevice.clone());
+		let textureDescriptorLayout = texturedGraphicsPipeline.descriptor_set_layout(1).unwrap();
+		let textureDescriptorSet = Arc::new(
+			PersistentDescriptorSet::start(textureDescriptorLayout.clone())
+				.add_sampled_image(texture.clone(), sampler.clone()).unwrap()
+				.build().unwrap()
+		);
+
 		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
 
 		let mut keyToIsPressed = HashMap::new();
@@ -240,6 +265,7 @@ impl Application {
 			texturedIndexBuffer,
 			descriptorSetsPool,
 			uniformBufferPool,
+			textureDescriptorSet,
 			previousFrameEnd,
 			shouldRecreateSwapchain: false,
 			cameraTransformation: CameraTransformation::new(),
@@ -328,7 +354,7 @@ impl Application {
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
-						.draw_indexed(self.texturedGraphicsPipeline.clone(), &DynamicState::none(), vec![self.texturedVertexBuffer.clone()], self.texturedIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeThree).unwrap()
+						.draw_indexed(self.texturedGraphicsPipeline.clone(), &DynamicState::none(), vec![self.texturedVertexBuffer.clone()], self.texturedIndexBuffer.clone(), [descriptorSet.clone(), self.textureDescriptorSet.clone()].to_vec(), pushConstantsCubeThree).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
