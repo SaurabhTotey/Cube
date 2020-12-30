@@ -238,7 +238,7 @@ impl Application {
 				.build().unwrap()
 		);
 
-		let previousFrameEnd = Some(Box::new(now(logicalDevice.clone())) as Box<dyn GpuFuture>);
+		let previousFrameEnd = Some(textureFuture.boxed());
 
 		let mut keyToIsPressed = HashMap::new();
 		[VirtualKeyCode::W, VirtualKeyCode::A, VirtualKeyCode::S, VirtualKeyCode::D, VirtualKeyCode::Space, VirtualKeyCode::LShift].iter().for_each(|keyCode| {
