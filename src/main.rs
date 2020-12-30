@@ -97,6 +97,8 @@ struct Application {
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	coloredVertexBuffer: Arc<ImmutableBuffer<[ColoredVertex]>>,
 	coloredIndexBuffer: Arc<ImmutableBuffer<[u32]>>,
+	texturedVertexBuffer: Arc<ImmutableBuffer<[TexturedVertex]>>,
+	texturedIndexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
 	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
@@ -157,7 +159,7 @@ impl Application {
 		let depthBuffer = AttachmentImage::transient(logicalDevice.clone(), swapchain.dimensions(), Format::D32Sfloat).unwrap();
 		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass, &depthBuffer);
 
-		let vertices = [
+		let coloredVertices = [
 			ColoredVertex { position: [ 0.5, 0.5,-0.5], color: [1.0, 0.0, 0.0, 1.0] },
 			ColoredVertex { position: [-0.5, 0.5,-0.5], color: [0.0, 1.0, 0.0, 1.0] },
 			ColoredVertex { position: [-0.5,-0.5,-0.5], color: [0.0, 0.0, 1.0, 1.0] },
@@ -168,11 +170,11 @@ impl Application {
 			ColoredVertex { position: [ 0.5,-0.5, 0.5], color: [1.0, 1.0, 1.0, 1.0] }
 		].to_vec();
 		let coloredVertexBuffer = ImmutableBuffer::from_iter(
-			vertices.iter().cloned(),
+			coloredVertices.iter().cloned(),
 			BufferUsage::vertex_buffer(),
 			graphicsQueue.clone()
 		).unwrap().0;
-		let indices = [
+		let coloredIndices = [
 			0u32, 2, 1, 0, 2, 3, //bottom face
 			4   , 6, 5, 4, 6, 7, //top face
 			0   , 1, 4, 1, 4, 5, //red-green side face
@@ -181,7 +183,27 @@ impl Application {
 			3   , 0, 7, 0, 7, 4  //white-red side face
 		];
 		let coloredIndexBuffer = ImmutableBuffer::from_iter(
-			indices.iter().cloned(),
+			coloredIndices.iter().cloned(),
+			BufferUsage::index_buffer(),
+			graphicsQueue.clone()
+		).unwrap().0;
+
+		let texturedVertices = [
+			TexturedVertex { position: [-0.5,-0.5, 0.0], faceId: 0, cornerId: 0 },
+			TexturedVertex { position: [-0.5, 0.5, 0.0], faceId: 0, cornerId: 1 },
+			TexturedVertex { position: [ 0.5,-0.5, 0.0], faceId: 0, cornerId: 2 },
+			TexturedVertex { position: [ 0.5, 0.5, 0.0], faceId: 0, cornerId: 3 },
+		].to_vec();
+		let texturedVertexBuffer = ImmutableBuffer::from_iter(
+			texturedVertices.iter().cloned(),
+			BufferUsage::vertex_buffer(),
+			graphicsQueue.clone()
+		).unwrap().0;
+		let texturedIndices = [
+			0u32, 1, 2, 3, 1, 2 // bottom face which should show the 1 face of the die
+		];
+		let texturedIndexBuffer = ImmutableBuffer::from_iter(
+			texturedIndices.iter().cloned(),
 			BufferUsage::index_buffer(),
 			graphicsQueue.clone()
 		).unwrap().0;
@@ -212,6 +234,8 @@ impl Application {
 			swapchainFramebuffers,
 			coloredVertexBuffer,
 			coloredIndexBuffer,
+			texturedVertexBuffer,
+			texturedIndexBuffer,
 			descriptorSetsPool,
 			uniformBufferPool,
 			previousFrameEnd,
