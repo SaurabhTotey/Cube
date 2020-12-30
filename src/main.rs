@@ -321,12 +321,14 @@ impl Application {
 
 					let pushConstantsCubeOne = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
 					let pushConstantsCubeTwo = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
+					let pushConstantsCubeThree = TexturedVertexShader::ty::ModelTransformation{ transformation: Matrix4::from_translation(Vector3::new(3.0, 3.0, 3.0)).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
 						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
+						.draw_indexed(self.texturedGraphicsPipeline.clone(), &DynamicState::none(), vec![self.texturedVertexBuffer.clone()], self.texturedIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeThree).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
