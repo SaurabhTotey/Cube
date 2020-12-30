@@ -18,7 +18,7 @@ use vulkano::command_buffer::{DynamicState, AutoCommandBufferBuilder};
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::sync::{now, GpuFuture, SharingMode};
 use std::collections::{HashSet, HashMap};
-use cgmath::{Matrix4, Rad, Point3, Vector3, Matrix3};
+use cgmath::{Matrix4, Rad, Point3, Vector3, Matrix3, InnerSpace};
 use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSetsPool, PersistentDescriptorSet};
 use vulkano::descriptor::{PipelineLayoutAbstract, DescriptorSet};
 use std::f32::consts::PI;
@@ -382,9 +382,10 @@ impl Application {
 					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
 					let descriptorSet = Arc::new(self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap());
 
-					let pushConstantsCubeOne = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
+					let angle = Rad((Instant::now() - self.startTime).as_secs_f32());
+					let pushConstantsCubeOne = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(angle).into() };
 					let pushConstantsCubeTwo = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
-					let pushConstantsCubeThree = TexturedVertexShader::ty::ModelTransformation{ transformation: Matrix4::from_translation(Vector3::new(-3.0, -3.0, -3.0)).into() };
+					let pushConstantsCubeThree = TexturedVertexShader::ty::ModelTransformation{ transformation: (Matrix4::from_translation(Vector3::new(-3.0, -3.0, -3.0)) * Matrix4::from_axis_angle(Vector3::new(1.0, 1.0, 1.0).normalize(), angle)).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
