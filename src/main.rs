@@ -25,15 +25,25 @@ use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 use std::time::Instant;
 
-mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/colored/vertex.glsl" } }
-mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/colored/fragment.glsl" } }
+mod ColoredVertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/colored/vertex.glsl" } }
+mod ColoredFragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/colored/fragment.glsl" } }
+mod TexturedVertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/textured/vertex.glsl" } }
+mod TexturedFragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/textured/fragment.glsl" } }
 
 #[derive(Default, Copy, Clone)]
-struct Vertex {
+struct ColoredVertex {
 	position: [f32; 3],
 	color: [f32; 4]
 }
-vulkano::impl_vertex!(Vertex, position, color);
+vulkano::impl_vertex!(ColoredVertex, position, color);
+
+#[derive(Default, Copy, Clone)]
+struct TexturedVertex {
+	position: [f32; 3],
+	faceId: i32,
+	cornerId: i32
+}
+vulkano::impl_vertex!(TexturedVertex, position, faceId, cornerId);
 
 #[derive(Copy, Clone)]
 struct CameraTransformation {
@@ -85,8 +95,8 @@ struct Application {
 	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 	depthBuffer: Arc<AttachmentImage>,
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-	vertexBuffer: Arc<ImmutableBuffer<[Vertex]>>,
-	indexBuffer: Arc<ImmutableBuffer<[u32]>>,
+	coloredVertexBuffer: Arc<ImmutableBuffer<[ColoredVertex]>>,
+	coloredIndexBuffer: Arc<ImmutableBuffer<[u32]>>,
 	descriptorSetsPool: FixedSizeDescriptorSetsPool,
 	uniformBufferPool: CpuBufferPool<Matrix4<f32>>,
 	previousFrameEnd: Option<Box<dyn GpuFuture>>,
@@ -148,16 +158,16 @@ impl Application {
 		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass, &depthBuffer);
 
 		let vertices = [
-			Vertex { position: [ 0.5, 0.5,-0.5], color: [1.0, 0.0, 0.0, 1.0] },
-			Vertex { position: [-0.5, 0.5,-0.5], color: [0.0, 1.0, 0.0, 1.0] },
-			Vertex { position: [-0.5,-0.5,-0.5], color: [0.0, 0.0, 1.0, 1.0] },
-			Vertex { position: [ 0.5,-0.5,-0.5], color: [1.0, 1.0, 1.0, 1.0] },
-			Vertex { position: [ 0.5, 0.5, 0.5], color: [1.0, 0.0, 0.0, 1.0] },
-			Vertex { position: [-0.5, 0.5, 0.5], color: [0.0, 1.0, 0.0, 1.0] },
-			Vertex { position: [-0.5,-0.5, 0.5], color: [0.0, 0.0, 1.0, 1.0] },
-			Vertex { position: [ 0.5,-0.5, 0.5], color: [1.0, 1.0, 1.0, 1.0] }
+			ColoredVertex { position: [ 0.5, 0.5,-0.5], color: [1.0, 0.0, 0.0, 1.0] },
+			ColoredVertex { position: [-0.5, 0.5,-0.5], color: [0.0, 1.0, 0.0, 1.0] },
+			ColoredVertex { position: [-0.5,-0.5,-0.5], color: [0.0, 0.0, 1.0, 1.0] },
+			ColoredVertex { position: [ 0.5,-0.5,-0.5], color: [1.0, 1.0, 1.0, 1.0] },
+			ColoredVertex { position: [ 0.5, 0.5, 0.5], color: [1.0, 0.0, 0.0, 1.0] },
+			ColoredVertex { position: [-0.5, 0.5, 0.5], color: [0.0, 1.0, 0.0, 1.0] },
+			ColoredVertex { position: [-0.5,-0.5, 0.5], color: [0.0, 0.0, 1.0, 1.0] },
+			ColoredVertex { position: [ 0.5,-0.5, 0.5], color: [1.0, 1.0, 1.0, 1.0] }
 		].to_vec();
-		let vertexBuffer = ImmutableBuffer::from_iter(
+		let coloredVertexBuffer = ImmutableBuffer::from_iter(
 			vertices.iter().cloned(),
 			BufferUsage::vertex_buffer(),
 			graphicsQueue.clone()
@@ -170,7 +180,7 @@ impl Application {
 			2   , 3, 6, 3, 6, 7, //blue-white side face
 			3   , 0, 7, 0, 7, 4  //white-red side face
 		];
-		let indexBuffer = ImmutableBuffer::from_iter(
+		let coloredIndexBuffer = ImmutableBuffer::from_iter(
 			indices.iter().cloned(),
 			BufferUsage::index_buffer(),
 			graphicsQueue.clone()
@@ -200,8 +210,8 @@ impl Application {
 			graphicsPipeline,
 			depthBuffer,
 			swapchainFramebuffers,
-			vertexBuffer,
-			indexBuffer,
+			coloredVertexBuffer,
+			coloredIndexBuffer,
 			descriptorSetsPool,
 			uniformBufferPool,
 			previousFrameEnd,
@@ -281,14 +291,14 @@ impl Application {
 					let uniformBuffer = self.uniformBufferPool.next(self.cameraTransformation.getTransformation(self.swapchain.dimensions()[0] as f32 / self.swapchain.dimensions()[1] as f32)).unwrap();
 					let descriptorSet = Arc::new(self.descriptorSetsPool.clone().next().add_buffer(uniformBuffer.clone()).unwrap().build().unwrap());
 
-					let pushConstantsCubeOne = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
-					let pushConstantsCubeTwo = VertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
+					let pushConstantsCubeOne = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_angle_z(Rad((Instant::now() - self.startTime).as_secs_f32())).into() };
+					let pushConstantsCubeTwo = ColoredVertexShader::ty::ModelTransformation { transformation: Matrix4::from_translation(Vector3::new(1.0, 2.0, 3.0)).into() };
 
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.vertexBuffer.clone()], self.indexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
+						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
+						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
@@ -391,8 +401,8 @@ impl Application {
 	}
 
 	fn createGraphicsPipeline(logicalDevice: &Arc<Device>, swapchainExtent: [u32; 2], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-		let vertexShader = VertexShader::Shader::load(logicalDevice.clone()).unwrap();
-		let fragmentShader = FragmentShader::Shader::load(logicalDevice.clone()).unwrap();
+		let vertexShader = ColoredVertexShader::Shader::load(logicalDevice.clone()).unwrap();
+		let fragmentShader = ColoredFragmentShader::Shader::load(logicalDevice.clone()).unwrap();
 
 		let viewport = Viewport {
 			origin: [0.0, 0.0],
@@ -402,7 +412,7 @@ impl Application {
 
 		return Arc::new(
 			GraphicsPipeline::start()
-				.vertex_input_single_buffer::<Vertex>()
+				.vertex_input_single_buffer::<ColoredVertex>()
 				.vertex_shader(vertexShader.main_entry_point(), ())
 				.viewports(vec![viewport])
 				.fragment_shader(fragmentShader.main_entry_point(), ())
