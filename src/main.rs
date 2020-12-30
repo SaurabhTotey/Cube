@@ -92,7 +92,8 @@ struct Application {
 	swapchain: Arc<Swapchain<Window>>,
 	swapchainImages: Vec<Arc<SwapchainImage<Window>>>,
 	renderPass: Arc<dyn RenderPassAbstract + Send + Sync>,
-	graphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+	coloredGraphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
+	texturedGraphicsPipeline: Arc<dyn GraphicsPipelineAbstract + Send + Sync>,
 	depthBuffer: Arc<AttachmentImage>,
 	swapchainFramebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
 	coloredVertexBuffer: Arc<ImmutableBuffer<[ColoredVertex]>>,
@@ -154,7 +155,7 @@ impl Application {
 
 		let (swapchain, swapchainImages) = Self::createSwapchain(&getSurfaceCapabilities(&physicalDevice), &surface, &logicalDevice, &graphicsQueue, &presentQueue, None);
 		let renderPass = Self::createRenderPass(&logicalDevice, swapchain.format());
-		let graphicsPipeline = Self::createGraphicsPipeline(&logicalDevice, swapchain.dimensions(), &renderPass);
+		let (coloredGraphicsPipeline, texturedGraphicsPipeline) = Self::createGraphicsPipelines(&logicalDevice, swapchain.dimensions(), &renderPass);
 
 		let depthBuffer = AttachmentImage::transient(logicalDevice.clone(), swapchain.dimensions(), Format::D32Sfloat).unwrap();
 		let swapchainFramebuffers = Self::createSwapchainFramebuffers(&swapchainImages, &renderPass, &depthBuffer);
@@ -208,7 +209,7 @@ impl Application {
 			graphicsQueue.clone()
 		).unwrap().0;
 
-		let layout = graphicsPipeline.descriptor_set_layout(0).unwrap();
+		let layout = coloredGraphicsPipeline.descriptor_set_layout(0).unwrap(); // should be the same between both pipelines
 		let descriptorSetsPool = FixedSizeDescriptorSetsPool::new(layout.clone());
 		let uniformBufferPool = CpuBufferPool::<Matrix4<f32>>::uniform_buffer(logicalDevice.clone());
 
@@ -229,7 +230,8 @@ impl Application {
 			swapchain,
 			swapchainImages,
 			renderPass,
-			graphicsPipeline,
+			coloredGraphicsPipeline,
+			texturedGraphicsPipeline,
 			depthBuffer,
 			swapchainFramebuffers,
 			coloredVertexBuffer,
@@ -273,7 +275,9 @@ impl Application {
 						self.swapchain = newSwapchain;
 						self.swapchainImages = newSwapchainImages;
 						self.renderPass = Self::createRenderPass(&self.logicalDevice, self.swapchain.format());
-						self.graphicsPipeline = Self::createGraphicsPipeline(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
+						let pipelines = Self::createGraphicsPipelines(&self.logicalDevice, self.swapchain.dimensions(), &self.renderPass);
+						self.coloredGraphicsPipeline = pipelines.0;
+						self.texturedGraphicsPipeline = pipelines.1;
 						self.depthBuffer = AttachmentImage::transient(self.logicalDevice.clone(), self.swapchain.dimensions(), Format::D32Sfloat).unwrap();
 						self.swapchainFramebuffers = Self::createSwapchainFramebuffers(&self.swapchainImages, &self.renderPass, &self.depthBuffer);
 						self.shouldRecreateSwapchain = false;
@@ -321,8 +325,8 @@ impl Application {
 					let mut commandBufferBuilder = AutoCommandBufferBuilder::new(self.logicalDevice.clone(), self.graphicsQueue.family()).unwrap();
 					commandBufferBuilder
 						.begin_render_pass(self.swapchainFramebuffers[imageIndex].clone(), false, vec![[0.0, 0.0, 0.0, 1.0].into(), 1f32.into()]).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
-						.draw_indexed(self.graphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
+						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeOne).unwrap()
+						.draw_indexed(self.coloredGraphicsPipeline.clone(), &DynamicState::none(), vec![self.coloredVertexBuffer.clone()], self.coloredIndexBuffer.clone(), descriptorSet.clone(), pushConstantsCubeTwo).unwrap()
 						.end_render_pass().unwrap();
 					let commandBuffer = commandBufferBuilder.build().unwrap();
 
@@ -424,9 +428,11 @@ impl Application {
 		);
 	}
 
-	fn createGraphicsPipeline(logicalDevice: &Arc<Device>, swapchainExtent: [u32; 2], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>) -> Arc<dyn GraphicsPipelineAbstract + Send + Sync> {
-		let vertexShader = ColoredVertexShader::Shader::load(logicalDevice.clone()).unwrap();
-		let fragmentShader = ColoredFragmentShader::Shader::load(logicalDevice.clone()).unwrap();
+	fn createGraphicsPipelines(logicalDevice: &Arc<Device>, swapchainExtent: [u32; 2], renderPass: &Arc<dyn RenderPassAbstract + Send + Sync>) -> (Arc<dyn GraphicsPipelineAbstract + Send + Sync>, Arc<dyn GraphicsPipelineAbstract + Send + Sync>) {
+		let coloredVertexShader = ColoredVertexShader::Shader::load(logicalDevice.clone()).unwrap();
+		let coloredFragmentShader = ColoredFragmentShader::Shader::load(logicalDevice.clone()).unwrap();
+		let texturedVertexShader = TexturedVertexShader::Shader::load(logicalDevice.clone()).unwrap();
+		let texturedFragmentShader = TexturedFragmentShader::Shader::load(logicalDevice.clone()).unwrap();
 
 		let viewport = Viewport {
 			origin: [0.0, 0.0],
@@ -434,15 +440,27 @@ impl Application {
 			depth_range: 0.0 .. 1.0
 		};
 
-		return Arc::new(
+		return (
+			Arc::new(
 			GraphicsPipeline::start()
 				.vertex_input_single_buffer::<ColoredVertex>()
-				.vertex_shader(vertexShader.main_entry_point(), ())
-				.viewports(vec![viewport])
-				.fragment_shader(fragmentShader.main_entry_point(), ())
+				.vertex_shader(coloredVertexShader.main_entry_point(), ())
+				.viewports(vec![viewport.clone()])
+				.fragment_shader(coloredFragmentShader.main_entry_point(), ())
 				.depth_stencil_simple_depth()
 				.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
 				.build(logicalDevice.clone()).unwrap()
+			),
+			Arc::new(
+				GraphicsPipeline::start()
+					.vertex_input_single_buffer::<TexturedVertex>()
+					.vertex_shader(texturedVertexShader.main_entry_point(), ())
+					.viewports(vec![viewport.clone()])
+					.fragment_shader(texturedFragmentShader.main_entry_point(), ())
+					.depth_stencil_simple_depth()
+					.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
+					.build(logicalDevice.clone()).unwrap()
+			)
 		);
 	}
 
