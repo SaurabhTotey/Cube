@@ -13,7 +13,20 @@ layout(location = 1) in int faceId;
 layout(location = 2) in int cornerId;
 layout(location = 0) out vec2 textureCoordinates;
 
+const int IMAGE_SIZE = 7;
+
 void main() {
 	gl_Position = camera.transformation * model.transformation * vec4(position, 1.0);
-	textureCoordinates = vec2(0.0); // TODO: determine this based off of faceId and cornerId
+	vec2 cornerOffset = vec2(0.0);
+	if (cornerId == 1) {
+		cornerOffset = vec2(float(IMAGE_SIZE), 0.0);
+	}
+	else if (cornerId == 2) {
+		cornerOffset = vec2(0.0, float(IMAGE_SIZE));
+	}
+	else if (cornerId == 3) {
+		cornerOffset = vec2(float(IMAGE_SIZE));
+	}
+	vec2 faceOffset = vec2(float(faceId * IMAGE_SIZE), 0.0);
+	textureCoordinates = cornerOffset + faceOffset;
 }
