@@ -25,8 +25,8 @@ use std::f32::consts::PI;
 use winit::event::{KeyboardInput, ElementState, VirtualKeyCode};
 use std::time::Instant;
 
-mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/vertex.glsl" } }
-mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/fragment.glsl" } }
+mod VertexShader { vulkano_shaders::shader!{ ty: "vertex", path: "./src/shader/colored/vertex.glsl" } }
+mod FragmentShader { vulkano_shaders::shader!{ ty: "fragment", path: "./src/shader/colored/fragment.glsl" } }
 
 #[derive(Default, Copy, Clone)]
 struct Vertex {
