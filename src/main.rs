@@ -508,14 +508,14 @@ impl Application {
 
 		return (
 			Arc::new(
-			GraphicsPipeline::start()
-				.vertex_input_single_buffer::<ColoredVertex>()
-				.vertex_shader(coloredVertexShader.main_entry_point(), ())
-				.viewports(vec![viewport.clone()])
-				.fragment_shader(coloredFragmentShader.main_entry_point(), ())
-				.depth_stencil_simple_depth()
-				.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
-				.build(logicalDevice.clone()).unwrap()
+				GraphicsPipeline::start()
+					.vertex_input_single_buffer::<ColoredVertex>()
+					.vertex_shader(coloredVertexShader.main_entry_point(), ())
+					.viewports(vec![viewport.clone()])
+					.fragment_shader(coloredFragmentShader.main_entry_point(), ())
+					.depth_stencil_simple_depth()
+					.render_pass(Subpass::from(renderPass.clone(), 0).unwrap())
+					.build(logicalDevice.clone()).unwrap()
 			),
 			Arc::new(
 				GraphicsPipeline::start()
